@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
-const { getBoardPermission, isBoardOwner, requireBoardOwner } = require('../middleware/permissions');
+const { getBoardPermission, isBoardOwner, requireBoardOwner, requireBoardEditor, getWorkspaceRole } = require('../middleware/permissions');
 
 // Get board members and their permissions
 router.get('/:boardId/members', authenticateToken, async (req, res) => {
@@ -18,14 +18,17 @@ router.get('/:boardId/members', authenticateToken, async (req, res) => {
     
     const result = await pool.query(
       `SELECT 
-        u.id, 
+        u.id as user_id, 
         u.name, 
         u.email,
         bm.permission,
         bm.is_board_owner,
-        bm.added_at
+        bm.added_at,
+        wm.role as workspace_role
       FROM board_members bm
       JOIN users u ON bm.user_id = u.id
+      LEFT JOIN boards b ON bm.board_id = b.id
+      LEFT JOIN workspace_members wm ON b.workspace_id = wm.workspace_id AND u.id = wm.user_id
       WHERE bm.board_id = $1
       ORDER BY 
         bm.is_board_owner DESC,
@@ -44,47 +47,59 @@ router.get('/:boardId/members', authenticateToken, async (req, res) => {
   }
 });
 
-// Add board member with permission (board owner or workspace owner only)
-router.post('/:boardId/members', authenticateToken, requireBoardOwner, async (req, res) => {
+// Add board member with permission (board owner or editor role in workspace)
+router.post('/:boardId/members', authenticateToken, requireBoardEditor, async (req, res) => {
   try {
     const { boardId } = req.params;
     const { userId, permission = 'view' } = req.body;
     const addedBy = req.user.id;
+    const workspaceId = req.workspaceId; // From middleware
+    
+    console.log(`ADD BOARD MEMBER REQUEST: board=${boardId}, user=${userId}, permission=${permission}, addedBy=${addedBy}`);
     
     // Validate permission
     if (!['edit', 'view'].includes(permission)) {
+      console.log('ERROR: Invalid permission');
       return res.status(400).json({ error: 'Invalid permission. Use: edit, view' });
     }
     
     // Check if user exists
     const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
     if (userCheck.rows.length === 0) {
+      console.log('ERROR: User not found');
       return res.status(404).json({ error: 'User not found' });
     }
     
     // Check if user is in workspace
-    const boardInfo = await pool.query('SELECT workspace_id FROM boards WHERE id = $1', [boardId]);
-    const workspaceId = boardInfo.rows[0]?.workspace_id;
-    
     const workspaceMember = await pool.query(
-      'SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+      'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
       [workspaceId, userId]
     );
     
     if (workspaceMember.rows.length === 0) {
+      console.log('ERROR: User not in workspace');
       return res.status(400).json({ error: 'User must be workspace member first' });
     }
     
+    const memberWorkspaceRole = workspaceMember.rows[0].role;
+    console.log(`User workspace role: ${memberWorkspaceRole}`);
+    
+    // Workspace viewers CAN have edit permission in specific boards
+    // This allows flexible board-level permissions independent of workspace role
+    
+    console.log('Executing INSERT board_members query...');
     // Add board member
-    await pool.query(
+    const result = await pool.query(
       `INSERT INTO board_members (board_id, user_id, permission, added_by)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (board_id, user_id) 
-       DO UPDATE SET permission = $3, added_by = $4`,
+       DO UPDATE SET permission = $3, added_by = $4
+       RETURNING *`,
       [boardId, userId, permission, addedBy]
     );
     
-    res.json({ message: 'Board member added successfully' });
+    console.log('SUCCESS: Board member added/updated', result.rows[0]);
+    res.json({ message: 'Board member added successfully', member: result.rows[0] });
   } catch (error) {
     console.error('Add board member error:', error);
     res.status(500).json({ error: 'Failed to add board member' });

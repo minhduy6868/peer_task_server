@@ -11,7 +11,7 @@ router.get('/:workspaceId/members', authenticateToken, async (req, res) => {
     
     const result = await pool.query(
       `SELECT 
-        u.id, 
+        u.id as user_id, 
         u.name, 
         u.email,
         wm.role,
@@ -75,8 +75,11 @@ router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceO
     const { workspaceId, userId } = req.params;
     const { role } = req.body;
     
+    console.log(`UPDATE ROLE REQUEST: workspace=${workspaceId}, user=${userId}, newRole=${role}`);
+    
     // Validate role
     if (!['editor', 'viewer'].includes(role)) {
+      console.log('ERROR: Invalid role');
       return res.status(400).json({ error: 'Invalid role. Use: editor, viewer' });
     }
     
@@ -87,9 +90,11 @@ router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceO
     );
     
     if (ownerCheck.rows.length > 0) {
+      console.log('ERROR: Cannot change owner role');
       return res.status(400).json({ error: 'Cannot change owner role' });
     }
     
+    console.log('Executing UPDATE query...');
     const result = await pool.query(
       `UPDATE workspace_members 
        SET role = $1 
@@ -99,9 +104,11 @@ router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceO
     );
     
     if (result.rows.length === 0) {
+      console.log('ERROR: Member not found in workspace_members table');
       return res.status(404).json({ error: 'Member not found' });
     }
     
+    console.log('SUCCESS: Role updated to', result.rows[0]);
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Update member error:', error);

@@ -163,27 +163,30 @@ router.put('/:id',
     const { name, description } = req.body;
 
     try {
-      // Check if user is board creator or workspace owner/admin
+      // Check if user is board owner or workspace owner
       const checkResult = await pool.query(
-        `SELECT b.*, w.owner_id, wm.role 
+        `SELECT b.*, w.owner_id, wm.role, bm.is_board_owner
          FROM boards b
          JOIN workspaces w ON b.workspace_id = w.id
-         JOIN workspace_members wm ON w.id = wm.workspace_id
-         WHERE b.id = $1 AND wm.user_id = $2`,
+         JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $2
+         LEFT JOIN board_members bm ON b.id = bm.board_id AND bm.user_id = $2
+         WHERE b.id = $1`,
         [boardId, userId]
       );
 
       if (checkResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Board not found' });
+        return res.status(404).json({ error: 'Board not found or access denied' });
       }
 
       const board = checkResult.rows[0];
-      const isOwner = board.owner_id === userId;
-      const isAdmin = board.role === 'admin';
-      const isCreator = board.created_by === userId;
+      const isWorkspaceOwner = board.owner_id === userId;
+      const isBoardOwner = board.is_board_owner === true;
 
-      if (!isOwner && !isAdmin && !isCreator) {
-        return res.status(403).json({ error: 'Permission denied' });
+      // Only workspace owner or board owner can update
+      if (!isWorkspaceOwner && !isBoardOwner) {
+        return res.status(403).json({ 
+          error: 'Only workspace owner or board creator can update this board' 
+        });
       }
 
       // Update board
@@ -220,33 +223,36 @@ router.put('/:id',
   }
 );
 
-// Delete board
+// Delete board (only creator or workspace owner)
 router.delete('/:id', async (req, res) => {
   const boardId = req.params.id;
   const userId = req.user.id;
 
   try {
-    // Check if user is board creator or workspace owner/admin
+    // Check if user is board creator or workspace owner
     const checkResult = await pool.query(
-      `SELECT b.*, w.owner_id, wm.role 
+      `SELECT b.*, w.owner_id, wm.role, bm.is_board_owner
        FROM boards b
        JOIN workspaces w ON b.workspace_id = w.id
-       JOIN workspace_members wm ON w.id = wm.workspace_id
-       WHERE b.id = $1 AND wm.user_id = $2`,
+       JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $2
+       LEFT JOIN board_members bm ON b.id = bm.board_id AND bm.user_id = $2
+       WHERE b.id = $1`,
       [boardId, userId]
     );
 
     if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Board not found' });
+      return res.status(404).json({ error: 'Board not found or access denied' });
     }
 
     const board = checkResult.rows[0];
-    const isOwner = board.owner_id === userId;
-    const isAdmin = board.role === 'admin';
-    const isCreator = board.created_by === userId;
+    const isWorkspaceOwner = board.owner_id === userId;
+    const isBoardOwner = board.is_board_owner === true;
 
-    if (!isOwner && !isAdmin && !isCreator) {
-      return res.status(403).json({ error: 'Permission denied' });
+    // Only workspace owner or board owner (creator) can delete
+    if (!isWorkspaceOwner && !isBoardOwner) {
+      return res.status(403).json({ 
+        error: 'Only workspace owner or board creator can delete this board' 
+      });
     }
 
     await pool.query('DELETE FROM boards WHERE id = $1', [boardId]);
