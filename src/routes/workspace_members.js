@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
-const { requireWorkspaceAdmin } = require('../middleware/permissions');
+const { requireWorkspaceOwner } = require('../middleware/permissions');
 
 // Get workspace members
 router.get('/:workspaceId/members', authenticateToken, async (req, res) => {
@@ -22,7 +22,7 @@ router.get('/:workspaceId/members', authenticateToken, async (req, res) => {
       ORDER BY 
         CASE wm.role 
           WHEN 'owner' THEN 1 
-          WHEN 'admin' THEN 2 
+          WHEN 'editor' THEN 2 
           ELSE 3 
         END,
         wm.joined_at ASC`,
@@ -36,15 +36,15 @@ router.get('/:workspaceId/members', authenticateToken, async (req, res) => {
   }
 });
 
-// Add workspace member
-router.post('/:workspaceId/members', authenticateToken, requireWorkspaceAdmin, async (req, res) => {
+// Add workspace member (owner only)
+router.post('/:workspaceId/members', authenticateToken, requireWorkspaceOwner, async (req, res) => {
   try {
     const { workspaceId } = req.params;
-    const { userId, role = 'member' } = req.body;
+    const { userId, role = 'viewer' } = req.body;
     
     // Validate role
-    if (!['admin', 'member'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. Use: admin, member' });
+    if (!['editor', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Use: editor, viewer' });
     }
     
     // Check if user exists
@@ -69,15 +69,15 @@ router.post('/:workspaceId/members', authenticateToken, requireWorkspaceAdmin, a
   }
 });
 
-// Update member role
-router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceAdmin, async (req, res) => {
+// Update member role (owner only)
+router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceOwner, async (req, res) => {
   try {
     const { workspaceId, userId } = req.params;
     const { role } = req.body;
     
     // Validate role
-    if (!['admin', 'member'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. Use: admin, member' });
+    if (!['editor', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Use: editor, viewer' });
     }
     
     // Cannot change workspace owner role
@@ -109,8 +109,8 @@ router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceA
   }
 });
 
-// Remove member
-router.delete('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceAdmin, async (req, res) => {
+// Remove member (owner only)
+router.delete('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceOwner, async (req, res) => {
   try {
     const { workspaceId, userId } = req.params;
     

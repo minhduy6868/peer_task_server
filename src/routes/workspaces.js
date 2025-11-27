@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Invite user to workspace by email
+// Invite user to workspace by email (owner only)
 router.post('/:id/invite',
   body('email').isEmail(),
   async (req, res) => {
@@ -84,15 +84,14 @@ router.post('/:id/invite',
     const userId = req.user.id;
 
     try {
-      // Check if requester is owner or admin
-      const memberCheck = await pool.query(
-        'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+      // Check if requester is owner
+      const ownerCheck = await pool.query(
+        'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
         [workspaceId, userId]
       );
 
-      if (memberCheck.rows.length === 0 || 
-          !['owner', 'admin'].includes(memberCheck.rows[0].role)) {
-        return res.status(403).json({ error: 'Permission denied' });
+      if (ownerCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Only workspace owner can invite members' });
       }
 
       // Find user by email
@@ -110,7 +109,7 @@ router.post('/:id/invite',
       // Add to workspace
       await pool.query(
         'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-        [workspaceId, invitedUserId, 'member']
+        [workspaceId, invitedUserId, 'viewer']
       );
 
       res.json({ message: 'User invited successfully' });
@@ -121,22 +120,21 @@ router.post('/:id/invite',
   }
 );
 
-// Generate invite link for workspace
+// Generate invite link for workspace (owner only)
 router.post('/:id/invite-link', async (req, res) => {
   const workspaceId = req.params.id;
   const userId = req.user.id;
   const { expiresIn, maxUses } = req.body; // expiresIn in hours, maxUses optional
 
   try {
-    // Check if requester is owner or admin
-    const memberCheck = await pool.query(
-      'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+    // Check if requester is owner
+    const ownerCheck = await pool.query(
+      'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
       [workspaceId, userId]
     );
 
-    if (memberCheck.rows.length === 0 || 
-        !['owner', 'admin'].includes(memberCheck.rows[0].role)) {
-      return res.status(403).json({ error: 'Permission denied' });
+    if (ownerCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Only workspace owner can create invite links' });
     }
 
     // Generate unique token
@@ -161,7 +159,7 @@ router.post('/:id/invite-link', async (req, res) => {
     res.json({
       inviteId: invite.id,
       token: invite.token,
-      inviteLink: `${process.env.APP_URL || 'http://localhost:3000'}/join/${invite.token}`,
+      inviteLink: invite.token,
       expiresAt: invite.expires_at,
       maxUses: invite.max_uses
     });
@@ -197,7 +195,7 @@ router.get('/:id/invite-links', async (req, res) => {
 
     const invites = result.rows.map(invite => ({
       ...invite,
-      inviteLink: `${process.env.APP_URL || 'http://localhost:3000'}/join/${invite.token}`,
+      inviteLink: invite.token,
       isExpired: invite.expires_at && new Date(invite.expires_at) < new Date(),
       isMaxedOut: invite.max_uses && invite.use_count >= invite.max_uses
     }));
@@ -285,10 +283,10 @@ router.post('/join/:token', authenticateToken, async (req, res) => {
       return res.status(410).json({ error: 'Invite link has reached maximum uses' });
     }
 
-    // Add user to workspace
+    // Add user to workspace with viewer role by default
     await pool.query(
       `INSERT INTO workspace_members (workspace_id, user_id, role)
-       VALUES ($1, $2, 'member')
+       VALUES ($1, $2, 'viewer')
        ON CONFLICT (workspace_id, user_id) DO NOTHING`,
       [invite.workspace_id, userId]
     );
@@ -313,21 +311,20 @@ router.post('/join/:token', authenticateToken, async (req, res) => {
   }
 });
 
-// Delete invite link
+// Delete invite link (owner only)
 router.delete('/:id/invite-links/:inviteId', async (req, res) => {
   const { id: workspaceId, inviteId } = req.params;
   const userId = req.user.id;
 
   try {
-    // Check if requester is owner or admin
-    const memberCheck = await pool.query(
-      'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+    // Check if requester is owner
+    const ownerCheck = await pool.query(
+      'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
       [workspaceId, userId]
     );
 
-    if (memberCheck.rows.length === 0 || 
-        !['owner', 'admin'].includes(memberCheck.rows[0].role)) {
-      return res.status(403).json({ error: 'Permission denied' });
+    if (ownerCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Only workspace owner can delete invite links' });
     }
 
     await pool.query(
@@ -336,6 +333,88 @@ router.delete('/:id/invite-links/:inviteId', async (req, res) => {
     );
 
     res.json({ message: 'Invite link deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update workspace (owner only)
+router.put('/:id',
+  body('name').optional().notEmpty(),
+  async (req, res) => {
+    const workspaceId = req.params.id;
+    const userId = req.user.id;
+    const { name } = req.body;
+
+    try {
+      // Check if user is owner
+      const ownerCheck = await pool.query(
+        'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
+        [workspaceId, userId]
+      );
+
+      if (ownerCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Only workspace owner can update workspace' });
+      }
+
+      // Update workspace
+      const result = await pool.query(
+        'UPDATE workspaces SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+        [name, workspaceId]
+      );
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// Delete workspace (owner only)
+router.delete('/:id', async (req, res) => {
+  const workspaceId = req.params.id;
+  const userId = req.user.id;
+
+  try {
+    // Check if user is owner
+    const ownerCheck = await pool.query(
+      'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
+      [workspaceId, userId]
+    );
+
+    if (ownerCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Only workspace owner can delete' });
+    }
+
+    await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
+    res.json({ message: 'Workspace deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get workspace details
+router.get('/:id', async (req, res) => {
+  const workspaceId = req.params.id;
+  const userId = req.user.id;
+
+  try {
+    const result = await pool.query(
+      `SELECT w.*, wm.role 
+       FROM workspaces w
+       JOIN workspace_members wm ON w.id = wm.workspace_id
+       WHERE w.id = $1 AND wm.user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

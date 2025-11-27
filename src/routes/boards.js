@@ -23,9 +23,9 @@ router.post('/',
     const userId = req.user.id;
 
     try {
-      // Check workspace membership
+      // Check workspace membership and role
       const memberCheck = await pool.query(
-        'SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+        'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
         [workspaceId, userId]
       );
 
@@ -33,14 +33,44 @@ router.post('/',
         return res.status(403).json({ error: 'Not a member of this workspace' });
       }
 
+      const userRole = memberCheck.rows[0].role;
+      
+      // Check if user is owner
+      const ownerCheck = await pool.query(
+        'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
+        [workspaceId, userId]
+      );
+      const isOwner = ownerCheck.rows.length > 0;
+
+      // Only owner and editor can create boards
+      if (!isOwner && userRole !== 'editor') {
+        return res.status(403).json({ 
+          error: 'Only workspace owner or editor can create boards' 
+        });
+      }
+
+      await pool.query('BEGIN');
+
       // Create board
-      const result = await pool.query(
+      const boardResult = await pool.query(
         'INSERT INTO boards (workspace_id, name, description, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
         [workspaceId, name, description || null, userId]
       );
 
-      res.status(201).json(result.rows[0]);
+      const board = boardResult.rows[0];
+
+      // Add creator as board owner with edit permission
+      await pool.query(
+        `INSERT INTO board_members (board_id, user_id, permission, is_board_owner, added_by)
+         VALUES ($1, $2, 'edit', TRUE, $2)`,
+        [board.id, userId]
+      );
+
+      await pool.query('COMMIT');
+
+      res.status(201).json(board);
     } catch (err) {
+      await pool.query('ROLLBACK');
       console.error(err);
       res.status(500).json({ error: 'Server error' });
     }
@@ -53,9 +83,9 @@ router.get('/workspace/:workspaceId', async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // Check workspace membership
+    // Check workspace membership and get role
     const memberCheck = await pool.query(
-      'SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+      'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
       [workspaceId, userId]
     );
 
@@ -63,10 +93,33 @@ router.get('/workspace/:workspaceId', async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this workspace' });
     }
 
-    // Get boards
+    const userRole = memberCheck.rows[0].role;
+    const isOwnerQuery = await pool.query(
+      'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
+      [workspaceId, userId]
+    );
+    const isOwner = isOwnerQuery.rows.length > 0;
+
+    // Owner sees ALL boards with 'edit' permission and is_board_owner rights
+    if (isOwner) {
+      const result = await pool.query(
+        `SELECT b.*, 'edit' as permission, TRUE as is_board_owner
+         FROM boards b 
+         WHERE b.workspace_id = $1 
+         ORDER BY b.created_at DESC`,
+        [workspaceId]
+      );
+      return res.json(result.rows);
+    }
+
+    // Editor and Viewer only see boards they are explicitly added to
     const result = await pool.query(
-      'SELECT * FROM boards WHERE workspace_id = $1 ORDER BY created_at DESC',
-      [workspaceId]
+      `SELECT b.*, bm.permission, bm.is_board_owner
+       FROM boards b
+       INNER JOIN board_members bm ON b.id = bm.board_id
+       WHERE b.workspace_id = $1 AND bm.user_id = $2
+       ORDER BY b.created_at DESC`,
+      [workspaceId, userId]
     );
 
     res.json(result.rows);
@@ -94,6 +147,110 @@ router.get('/:id', async (req, res) => {
     }
 
     res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update board
+router.put('/:id',
+  body('name').optional().notEmpty(),
+  body('description').optional(),
+  async (req, res) => {
+    const boardId = req.params.id;
+    const userId = req.user.id;
+    const { name, description } = req.body;
+
+    try {
+      // Check if user is board creator or workspace owner/admin
+      const checkResult = await pool.query(
+        `SELECT b.*, w.owner_id, wm.role 
+         FROM boards b
+         JOIN workspaces w ON b.workspace_id = w.id
+         JOIN workspace_members wm ON w.id = wm.workspace_id
+         WHERE b.id = $1 AND wm.user_id = $2`,
+        [boardId, userId]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Board not found' });
+      }
+
+      const board = checkResult.rows[0];
+      const isOwner = board.owner_id === userId;
+      const isAdmin = board.role === 'admin';
+      const isCreator = board.created_by === userId;
+
+      if (!isOwner && !isAdmin && !isCreator) {
+        return res.status(403).json({ error: 'Permission denied' });
+      }
+
+      // Update board
+      const updates = [];
+      const values = [];
+      let paramCount = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${paramCount++}`);
+        values.push(name);
+      }
+      if (description !== undefined) {
+        updates.push(`description = $${paramCount++}`);
+        values.push(description);
+      }
+      
+      if (updates.length === 0) {
+        return res.status(400).json({ error: 'No fields to update' });
+      }
+
+      updates.push(`updated_at = NOW()`);
+      values.push(boardId);
+
+      const result = await pool.query(
+        `UPDATE boards SET ${updates.join(', ')} WHERE id = $${paramCount} RETURNING *`,
+        values
+      );
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// Delete board
+router.delete('/:id', async (req, res) => {
+  const boardId = req.params.id;
+  const userId = req.user.id;
+
+  try {
+    // Check if user is board creator or workspace owner/admin
+    const checkResult = await pool.query(
+      `SELECT b.*, w.owner_id, wm.role 
+       FROM boards b
+       JOIN workspaces w ON b.workspace_id = w.id
+       JOIN workspace_members wm ON w.id = wm.workspace_id
+       WHERE b.id = $1 AND wm.user_id = $2`,
+      [boardId, userId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Board not found' });
+    }
+
+    const board = checkResult.rows[0];
+    const isOwner = board.owner_id === userId;
+    const isAdmin = board.role === 'admin';
+    const isCreator = board.created_by === userId;
+
+    if (!isOwner && !isAdmin && !isCreator) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+
+    await pool.query('DELETE FROM boards WHERE id = $1', [boardId]);
+    res.json({ message: 'Board deleted successfully' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

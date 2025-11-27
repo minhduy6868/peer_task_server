@@ -25,15 +25,15 @@ CREATE TABLE IF NOT EXISTS workspaces (
 CREATE TABLE IF NOT EXISTS workspace_members (
   workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  role VARCHAR(50) DEFAULT 'member', -- 'owner', 'admin', 'member'
+  role VARCHAR(50) DEFAULT 'viewer', -- 'owner', 'editor', 'viewer'
   joined_at TIMESTAMP DEFAULT NOW(),
   PRIMARY KEY (workspace_id, user_id)
 );
 
--- Workspace member roles explanation:
--- 'owner': Full control, can delete workspace, manage all members
--- 'admin': Can manage members, create/delete boards, assign permissions
--- 'member': Can view workspace, access boards based on board_members permissions
+-- Workspace member roles:
+-- 'owner': Full control - delete workspace, manage all members, view/edit ALL boards (even not added)
+-- 'editor': Can create boards, only see boards they are added to
+-- 'viewer': Cannot create boards, only see boards they are added to
 
 -- Boards table
 CREATE TABLE IF NOT EXISTS boards (
@@ -51,14 +51,16 @@ CREATE TABLE IF NOT EXISTS board_members (
   board_id UUID REFERENCES boards(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   permission VARCHAR(50) DEFAULT 'view', -- 'edit', 'view'
+  is_board_owner BOOLEAN DEFAULT FALSE, -- Board creator/owner who can manage members
   added_at TIMESTAMP DEFAULT NOW(),
   added_by UUID REFERENCES users(id),
   PRIMARY KEY (board_id, user_id)
 );
 
 -- Board permission levels:
--- 'edit': Can draw, create/edit/delete tasks, invite others (editor)
--- 'view': Can only view board, cannot modify (viewer/readonly)
+-- 'edit': Can view + edit content, manage tasks (Board Editor)
+-- 'view': Can only view board content (Board Viewer)
+-- is_board_owner: Board creator who can add/remove members, change permissions, transfer ownership
 
 -- Tasks table (Kanban tasks in boards)
 CREATE TABLE IF NOT EXISTS tasks (

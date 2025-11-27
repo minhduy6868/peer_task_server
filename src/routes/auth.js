@@ -5,8 +5,34 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const pool = require('../db/pool');
 const { sendPasswordResetEmail, sendWelcomeEmail } = require('../services/email_service');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Get current user
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, email, name, created_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = result.rows[0];
+    res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      createdAt: user.created_at
+    });
+  } catch (err) {
+    console.error('Get user error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // Register
 router.post('/register',

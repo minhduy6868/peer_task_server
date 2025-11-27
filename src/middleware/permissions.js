@@ -4,19 +4,20 @@ const pool = require('../db/pool');
  * Permission Middleware - Smart authorization logic
  * 
  * WORKSPACE LEVEL:
- * - owner: Full control (delete workspace, manage members, all boards)
- * - admin: Manage members, create/delete boards, assign board permissions
- * - member: Access boards based on board_members table
+ * - owner: Full control (delete workspace, manage members, view/edit ALL boards)
+ * - editor: Can create boards, only access boards they are added to
+ * - viewer: Cannot create boards, only access boards they are added to
  * 
  * BOARD LEVEL:
- * - edit: Can draw, create/edit/delete tasks, invite collaborators
+ * - Board Owner (is_board_owner=true): Manage board members, change permissions
+ * - edit: Can view + edit content, manage tasks
  * - view: Read-only access
  * 
  * LOGIC FLOW:
- * 1. Check if user is in workspace (workspace_members)
- * 2. Check workspace role (owner/admin get auto-edit on all boards)
- * 3. For members: check board_members table for specific permission
- * 4. Board creator (created_by) always has edit permission
+ * 1. Check if user is workspace owner → full access to all boards
+ * 2. Check workspace role (editor can create boards)
+ * 3. For board access: check board_members table
+ * 4. Board creator gets is_board_owner flag automatically
  */
 
 // Check if user is workspace owner
@@ -49,29 +50,31 @@ async function getBoardPermission(userId, boardId) {
   
   const board = boardResult.rows[0];
   
-  // Creator always has edit
-  if (board.created_by === userId) {
-    return 'edit';
-  }
-  
-  // Check if workspace owner
+  // Workspace owner always has edit on ALL boards
   if (await isWorkspaceOwner(userId, board.workspace_id)) {
     return 'edit';
   }
   
-  // Check workspace role
-  const workspaceRole = await getWorkspaceRole(userId, board.workspace_id);
-  if (workspaceRole === 'admin') {
-    return 'edit';
-  }
-  
-  // Check board-specific permission
+  // Check board membership (editor/viewer must be explicitly added)
   const permResult = await pool.query(
-    `SELECT permission FROM board_members WHERE board_id = $1 AND user_id = $2`,
+    `SELECT permission, is_board_owner FROM board_members WHERE board_id = $1 AND user_id = $2`,
     [boardId, userId]
   );
   
-  return permResult.rows[0]?.permission || null;
+  if (permResult.rows.length === 0) {
+    return null; // Not added to board
+  }
+  
+  return permResult.rows[0].permission;
+}
+
+// Check if user is board owner (can manage members)
+async function isBoardOwner(userId, boardId) {
+  const result = await pool.query(
+    `SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE`,
+    [boardId, userId]
+  );
+  return result.rows.length > 0;
 }
 
 // Middleware: Require workspace membership
@@ -95,8 +98,29 @@ function requireWorkspaceMember(req, res, next) {
   };
 }
 
-// Middleware: Require workspace admin or owner
-function requireWorkspaceAdmin(req, res, next) {
+// Middleware: Require workspace owner (only owner can manage workspace)
+function requireWorkspaceOwner(req, res, next) {
+  return async (req, res, next) => {
+    const userId = req.user.id;
+    const workspaceId = req.params.workspaceId || req.params.id || req.body.workspaceId;
+    
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'Workspace ID required' });
+    }
+    
+    const isOwner = await isWorkspaceOwner(userId, workspaceId);
+    
+    if (!isOwner) {
+      return res.status(403).json({ error: 'Only workspace owner can perform this action' });
+    }
+    
+    req.workspaceRole = 'owner';
+    next();
+  };
+}
+
+// Middleware: Require workspace editor or owner (can create boards)
+function requireWorkspaceEditor(req, res, next) {
   return async (req, res, next) => {
     const userId = req.user.id;
     const workspaceId = req.params.workspaceId || req.body.workspaceId;
@@ -108,8 +132,8 @@ function requireWorkspaceAdmin(req, res, next) {
     const isOwner = await isWorkspaceOwner(userId, workspaceId);
     const role = await getWorkspaceRole(userId, workspaceId);
     
-    if (!isOwner && role !== 'admin') {
-      return res.status(403).json({ error: 'Requires admin or owner role' });
+    if (!isOwner && role !== 'editor') {
+      return res.status(403).json({ error: 'Requires editor or owner role' });
     }
     
     req.workspaceRole = isOwner ? 'owner' : role;
@@ -159,12 +183,56 @@ function requireBoardView(req, res, next) {
   };
 }
 
+// Middleware: Require board owner (can manage members)
+function requireBoardOwner(req, res, next) {
+  return async (req, res, next) => {
+    const userId = req.user.id;
+    const boardId = req.params.boardId || req.params.id || req.body.boardId;
+    
+    if (!boardId) {
+      return res.status(400).json({ error: 'Board ID required' });
+    }
+    
+    // Get board's workspace
+    const boardResult = await pool.query(
+      'SELECT workspace_id FROM boards WHERE id = $1',
+      [boardId]
+    );
+    
+    if (boardResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Board not found' });
+    }
+    
+    const workspaceId = boardResult.rows[0].workspace_id;
+    
+    // Workspace owner always has board owner rights
+    const isWsOwner = await isWorkspaceOwner(userId, workspaceId);
+    if (isWsOwner) {
+      req.boardPermission = 'edit';
+      req.isBoardOwner = true;
+      return next();
+    }
+    
+    // Check if board owner
+    const isBOwner = await isBoardOwner(userId, boardId);
+    if (!isBOwner) {
+      return res.status(403).json({ error: 'Only board owner can perform this action' });
+    }
+    
+    req.isBoardOwner = true;
+    next();
+  };
+}
+
 module.exports = {
   isWorkspaceOwner,
   getWorkspaceRole,
   getBoardPermission,
+  isBoardOwner,
   requireWorkspaceMember,
-  requireWorkspaceAdmin,
+  requireWorkspaceOwner,
+  requireWorkspaceEditor,
   requireBoardEdit,
   requireBoardView,
+  requireBoardOwner,
 };

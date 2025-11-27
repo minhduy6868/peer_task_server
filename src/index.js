@@ -10,6 +10,8 @@ const workspaceRoutes = require('./routes/workspaces');
 const workspaceMembersRoutes = require('./routes/workspace_members');
 const boardRoutes = require('./routes/boards');
 const boardMembersRoutes = require('./routes/board_members');
+const taskRoutes = require('./routes/tasks');
+const operationRoutes = require('./routes/operations');
 const { setupSocketHandlers } = require('./sockets/signaling');
 
 const app = express();
@@ -32,6 +34,8 @@ app.use('/workspaces', workspaceRoutes);
 app.use('/workspaces', workspaceMembersRoutes);
 app.use('/boards', boardRoutes);
 app.use('/boards', boardMembersRoutes);
+app.use('/tasks', taskRoutes);
+app.use('/operations', operationRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

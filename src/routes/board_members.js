@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
-const { requireBoardEdit, getBoardPermission } = require('../middleware/permissions');
+const { getBoardPermission, isBoardOwner, requireBoardOwner } = require('../middleware/permissions');
 
 // Get board members and their permissions
 router.get('/:boardId/members', authenticateToken, async (req, res) => {
@@ -22,13 +22,13 @@ router.get('/:boardId/members', authenticateToken, async (req, res) => {
         u.name, 
         u.email,
         bm.permission,
-        bm.added_at,
-        added_by_user.name as added_by_name
+        bm.is_board_owner,
+        bm.added_at
       FROM board_members bm
       JOIN users u ON bm.user_id = u.id
-      LEFT JOIN users added_by_user ON bm.added_by = added_by_user.id
       WHERE bm.board_id = $1
       ORDER BY 
+        bm.is_board_owner DESC,
         CASE bm.permission 
           WHEN 'edit' THEN 1 
           ELSE 2 
@@ -44,8 +44,8 @@ router.get('/:boardId/members', authenticateToken, async (req, res) => {
   }
 });
 
-// Add board member with permission
-router.post('/:boardId/members', authenticateToken, requireBoardEdit, async (req, res) => {
+// Add board member with permission (board owner or workspace owner only)
+router.post('/:boardId/members', authenticateToken, requireBoardOwner, async (req, res) => {
   try {
     const { boardId } = req.params;
     const { userId, permission = 'view' } = req.body;
@@ -91,8 +91,8 @@ router.post('/:boardId/members', authenticateToken, requireBoardEdit, async (req
   }
 });
 
-// Update board member permission
-router.put('/:boardId/members/:userId', authenticateToken, requireBoardEdit, async (req, res) => {
+// Update board member permission (board owner or workspace owner only)
+router.put('/:boardId/members/:userId', authenticateToken, requireBoardOwner, async (req, res) => {
   try {
     const { boardId, userId } = req.params;
     const { permission } = req.body;
@@ -102,14 +102,14 @@ router.put('/:boardId/members/:userId', authenticateToken, requireBoardEdit, asy
       return res.status(400).json({ error: 'Invalid permission. Use: edit, view' });
     }
     
-    // Cannot change board creator permission
-    const creatorCheck = await pool.query(
-      'SELECT 1 FROM boards WHERE id = $1 AND created_by = $2',
+    // Cannot change board owner permission
+    const ownerCheck = await pool.query(
+      'SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE',
       [boardId, userId]
     );
     
-    if (creatorCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Cannot change board creator permission' });
+    if (ownerCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'Cannot change board owner permission' });
     }
     
     const result = await pool.query(
@@ -131,19 +131,19 @@ router.put('/:boardId/members/:userId', authenticateToken, requireBoardEdit, asy
   }
 });
 
-// Remove board member
-router.delete('/:boardId/members/:userId', authenticateToken, requireBoardEdit, async (req, res) => {
+// Remove board member (board owner or workspace owner only)
+router.delete('/:boardId/members/:userId', authenticateToken, requireBoardOwner, async (req, res) => {
   try {
     const { boardId, userId } = req.params;
     
-    // Cannot remove board creator
-    const creatorCheck = await pool.query(
-      'SELECT 1 FROM boards WHERE id = $1 AND created_by = $2',
+    // Cannot remove board owner
+    const ownerCheck = await pool.query(
+      'SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE',
       [boardId, userId]
     );
     
-    if (creatorCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Cannot remove board creator' });
+    if (ownerCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'Cannot remove board owner' });
     }
     
     const result = await pool.query(
