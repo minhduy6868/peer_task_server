@@ -12,6 +12,7 @@ const boardRoutes = require('./routes/boards');
 const boardMembersRoutes = require('./routes/board_members');
 const taskRoutes = require('./routes/tasks');
 const operationRoutes = require('./routes/operations');
+const adminRoutes = require('./routes/admin');
 const { setupSocketHandlers } = require('./sockets/signaling');
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/boards', boardRoutes);
 app.use('/boards', boardMembersRoutes);
 app.use('/tasks', taskRoutes);
 app.use('/operations', operationRoutes);
+app.use('/admin', adminRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

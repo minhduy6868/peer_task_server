@@ -30,7 +30,18 @@ router.get('/board/:boardId', requireBoardView, async (req, res) => {
     query += ' ORDER BY bo.timestamp ASC';
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    
+    // Transform to match Dart Operation model (opId instead of operation_id)
+    const operations = result.rows.map(row => ({
+      opId: row.operation_id,
+      actor: row.created_by,
+      timestamp: parseInt(row.timestamp), // Parse to int
+      type: row.operation_type,
+      payload: row.payload,
+      applied: false
+    }));
+    
+    res.json(operations);
   } catch (err) {
     console.error('Get operations error:', err);
     res.status(500).json({ error: 'Failed to get operations' });
