@@ -9,24 +9,30 @@ const router = express.Router();
 router.use(authenticateToken);
 
 /**
- * Helper: Validate assignee is a board member
+ * Helper: Validate assignees are board members
  */
-async function validateAssignee(boardId, assigneeId) {
-  if (!assigneeId) return { valid: true };
+async function validateAssignees(boardId, assigneeIds) {
+  if (!assigneeIds || assigneeIds.length === 0) return { valid: true };
   
-  const result = await pool.query(
-    `SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2
-     UNION
-     SELECT 1 FROM boards b 
-     JOIN workspace_members wm ON b.workspace_id = wm.workspace_id
-     WHERE b.id = $1 AND wm.user_id = $2 AND wm.role = 'owner'`,
-    [boardId, assigneeId]
-  );
+  for (const assigneeId of assigneeIds) {
+    const result = await pool.query(
+      `SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2
+       UNION
+       SELECT 1 FROM boards b 
+       JOIN workspace_members wm ON b.workspace_id = wm.workspace_id
+       WHERE b.id = $1 AND wm.user_id = $2 AND wm.role = 'owner'`,
+      [boardId, assigneeId]
+    );
+    
+    if (result.rows.length === 0) {
+      return { 
+        valid: false,
+        error: `User ${assigneeId} is not a member of this board`
+      };
+    }
+  }
   
-  return { 
-    valid: result.rows.length > 0,
-    error: result.rows.length === 0 ? 'Assignee is not a member of this board' : null
-  };
+  return { valid: true };
 }
 
 /**
@@ -82,13 +88,17 @@ router.get('/board/:boardId',
       let query = `
         SELECT t.*, 
                u.name as creator_name,
-               a.name as assignee_name,
-               a.email as assignee_email,
+               (SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                 'id', users.id,
+                 'name', users.name,
+                 'email', users.email
+               ))
+               FROM users
+               WHERE users.id = ANY(t.assignees)) as assignee_list,
                (SELECT COUNT(*) FROM tasks WHERE parent_id = t.id) as subtask_count,
                (SELECT COUNT(*) FROM tasks WHERE parent_id = t.id AND status = 'done') as completed_subtask_count
         FROM tasks t
         LEFT JOIN users u ON t.created_by = u.id
-        LEFT JOIN users a ON t.assignee_id = a.id
         WHERE t.board_id = $1
       `;
       const values = [boardId];
@@ -96,7 +106,7 @@ router.get('/board/:boardId',
 
       // Apply filters
       if (assignee_id) {
-        query += ` AND t.assignee_id = $${paramCount++}`;
+        query += ` AND $${paramCount++} = ANY(t.assignees)`;
         values.push(assignee_id);
       }
       if (status) {
@@ -133,12 +143,10 @@ router.post('/',
   body('boardId').isUUID(),
   body('title').notEmpty().trim(),
   body('description').optional().trim(),
-  body('assignee').optional(),
-  body('assignee_id').optional().isUUID(),
+  body('assignees').optional().isArray(),
   body('status').optional().isIn(['todo', 'doing', 'done']),
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   body('deadline').optional().isISO8601(),
-  body('progress').optional().isInt({ min: 0, max: 100 }),
   body('parent_id').optional(),
   body('labels').optional().isArray(),
   body('estimated_hours').optional().isFloat({ min: 0 }),
@@ -152,12 +160,10 @@ router.post('/',
       boardId, 
       title, 
       description,
-      assignee, 
-      assignee_id,
+      assignees = [],
       status = 'todo',
       priority = 'medium',
       deadline,
-      progress = 0,
       parent_id,
       labels = [],
       estimated_hours
@@ -165,9 +171,9 @@ router.post('/',
     const userId = req.user.id;
 
     try {
-      // Validate assignee_id is a board member
-      if (assignee_id) {
-        const validation = await validateAssignee(boardId, assignee_id);
+      // Validate assignees are board members
+      if (assignees.length > 0) {
+        const validation = await validateAssignees(boardId, assignees);
         if (!validation.valid) {
           return res.status(400).json({ error: validation.error });
         }
@@ -187,35 +193,24 @@ router.post('/',
       // Get next position for this status column
       const position = await getNextPosition(boardId, status);
 
-      // Get assignee name if assignee_id provided
-      let assigneeName = assignee;
-      if (assignee_id && !assignee) {
-        const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [assignee_id]);
-        if (userResult.rows.length > 0) {
-          assigneeName = userResult.rows[0].name;
-        }
-      }
-
       const result = await pool.query(
         `INSERT INTO tasks (
-          id, board_id, title, description, assignee, assignee_id, 
-          status, position, priority, deadline, progress, 
+          id, board_id, title, description, assignees, 
+          status, position, priority, deadline, 
           parent_id, labels, estimated_hours, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
         RETURNING *`,
         [
           `task-${Date.now()}`, 
           boardId, 
           title, 
           description,
-          assigneeName, 
-          assignee_id,
+          assignees,
           status, 
           position,
           priority,
           deadline ? new Date(deadline) : null,
-          progress,
           parent_id,
           JSON.stringify(labels),
           estimated_hours,
@@ -228,11 +223,15 @@ router.post('/',
       const enrichedResult = await pool.query(
         `SELECT t.*, 
                 u.name as creator_name,
-                a.name as assignee_name,
-                a.email as assignee_email
+                (SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                  'id', users.id,
+                  'name', users.name,
+                  'email', users.email
+                ))
+                FROM users
+                WHERE users.id = ANY(t.assignees)) as assignee_list
          FROM tasks t
          LEFT JOIN users u ON t.created_by = u.id
-         LEFT JOIN users a ON t.assignee_id = a.id
          WHERE t.id = $1`,
         [task.id]
       );
@@ -250,21 +249,19 @@ router.put('/:taskId',
   requireBoardEdit,
   body('title').optional().notEmpty().trim(),
   body('description').optional(),
-  body('assignee').optional(),
-  body('assignee_id').optional().isUUID(),
+  body('assignees').optional().isArray(),
   body('status').optional().isIn(['todo', 'doing', 'done']),
   body('position').optional().isInt({ min: 0 }),
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   body('deadline').optional(),
-  body('progress').optional().isInt({ min: 0, max: 100 }),
   body('labels').optional().isArray(),
   body('estimated_hours').optional().isFloat({ min: 0 }),
   async (req, res) => {
     const { taskId } = req.params;
     const { 
-      title, description, assignee, assignee_id, 
+      title, description, assignees, 
       status, position, priority, deadline, 
-      progress, labels, estimated_hours 
+      labels, estimated_hours 
     } = req.body;
 
     try {
@@ -280,9 +277,9 @@ router.put('/:taskId',
 
       const { board_id, old_status, old_position } = taskCheck.rows[0];
 
-      // Validate assignee_id is a board member
-      if (assignee_id) {
-        const validation = await validateAssignee(board_id, assignee_id);
+      // Validate assignees are board members
+      if (assignees && assignees.length > 0) {
+        const validation = await validateAssignees(board_id, assignees);
         if (!validation.valid) {
           return res.status(400).json({ error: validation.error });
         }
@@ -300,36 +297,13 @@ router.put('/:taskId',
         updates.push(`description = $${paramCount++}`);
         values.push(description);
       }
-      if (assignee !== undefined) {
-        updates.push(`assignee = $${paramCount++}`);
-        values.push(assignee);
-      }
-      if (assignee_id !== undefined) {
-        updates.push(`assignee_id = $${paramCount++}`);
-        values.push(assignee_id);
-        
-        // Also update assignee name
-        if (assignee_id) {
-          const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [assignee_id]);
-          if (userResult.rows.length > 0) {
-            updates.push(`assignee = $${paramCount++}`);
-            values.push(userResult.rows[0].name);
-          }
-        } else {
-          updates.push(`assignee = $${paramCount++}`);
-          values.push(null);
-        }
+      if (assignees !== undefined) {
+        updates.push(`assignees = $${paramCount++}`);
+        values.push(assignees);
       }
       if (status !== undefined) {
         updates.push(`status = $${paramCount++}`);
         values.push(status);
-        
-        // Auto-update progress when status changes
-        if (status === 'done' && progress === undefined) {
-          updates.push(`progress = 100`);
-        } else if (status === 'todo' && progress === undefined) {
-          updates.push(`progress = 0`);
-        }
       }
       if (position !== undefined) {
         updates.push(`position = $${paramCount++}`);
@@ -342,10 +316,6 @@ router.put('/:taskId',
       if (deadline !== undefined) {
         updates.push(`deadline = $${paramCount++}`);
         values.push(deadline ? new Date(deadline) : null);
-      }
-      if (progress !== undefined) {
-        updates.push(`progress = $${paramCount++}`);
-        values.push(progress);
       }
       if (labels !== undefined) {
         updates.push(`labels = $${paramCount++}`);
@@ -386,11 +356,15 @@ router.put('/:taskId',
       const enrichedResult = await pool.query(
         `SELECT t.*, 
                 u.name as creator_name,
-                a.name as assignee_name,
-                a.email as assignee_email
+                (SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                  'id', users.id,
+                  'name', users.name,
+                  'email', users.email
+                ))
+                FROM users
+                WHERE users.id = ANY(t.assignees)) as assignee_list
          FROM tasks t
          LEFT JOIN users u ON t.created_by = u.id
-         LEFT JOIN users a ON t.assignee_id = a.id
          WHERE t.id = $1`,
         [taskId]
       );
@@ -505,11 +479,15 @@ router.post('/:taskId/move', requireBoardEdit, async (req, res) => {
     const result = await pool.query(
       `SELECT t.*, 
               u.name as creator_name,
-              a.name as assignee_name,
-              a.email as assignee_email
+              (SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                'id', users.id,
+                'name', users.name,
+                'email', users.email
+              ))
+              FROM users
+              WHERE users.id = ANY(t.assignees)) as assignee_list
        FROM tasks t
        LEFT JOIN users u ON t.created_by = u.id
-       LEFT JOIN users a ON t.assignee_id = a.id
        WHERE t.id = $1`,
       [taskId]
     );
