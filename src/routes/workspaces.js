@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
+const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 
 const router = express.Router();
@@ -11,19 +12,19 @@ router.use(authenticateToken);
 
 // Create workspace
 router.post('/',
-  body('name').notEmpty(),
-  async (req, res) => {
+  body('name').notEmpty().withMessage('Workspace name is required'),
+  asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      throw new AppError('Validation failed', 400, 'VALIDATION_ERROR', errors.array());
     }
 
     const { name } = req.body;
     const userId = req.user.id;
 
-    try {
-      await pool.query('BEGIN');
+    await pool.query('BEGIN');
 
+    try {
       // Create workspace
       const workspaceResult = await pool.query(
         'INSERT INTO workspaces (name, owner_id) VALUES ($1, $2) RETURNING *',
@@ -43,32 +44,26 @@ router.post('/',
       res.status(201).json(workspace);
     } catch (err) {
       await pool.query('ROLLBACK');
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
+      throw err;
     }
-  }
+  })
 );
 
 // Get user's workspaces
-router.get('/', async (req, res) => {
+router.get('/', asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
-  try {
-    const result = await pool.query(
-      `SELECT w.*, wm.role 
-       FROM workspaces w
-       JOIN workspace_members wm ON w.id = wm.workspace_id
-       WHERE wm.user_id = $1
-       ORDER BY w.created_at DESC`,
-      [userId]
-    );
+  const result = await pool.query(
+    `SELECT w.*, wm.role 
+     FROM workspaces w
+     JOIN workspace_members wm ON w.id = wm.workspace_id
+     WHERE wm.user_id = $1
+     ORDER BY w.created_at DESC`,
+    [userId]
+  );
 
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  res.json(result.rows);
+}));
 
 // Invite user to workspace by email (owner only)
 router.post('/:id/invite',

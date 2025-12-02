@@ -14,6 +14,7 @@ const taskRoutes = require('./routes/tasks');
 const operationRoutes = require('./routes/operations');
 const adminRoutes = require('./routes/admin');
 const { setupSocketHandlers } = require('./sockets/signaling');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const app = express();
 const httpServer = createServer(app);
@@ -42,6 +43,12 @@ app.use('/admin', adminRoutes);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// 404 handler (must be after all routes)
+app.use(notFoundHandler);
+
+// Global error handler (must be last)
+app.use(errorHandler);
 
 // Setup Socket.IO handlers
 setupSocketHandlers(io);
