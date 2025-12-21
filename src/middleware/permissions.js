@@ -271,6 +271,44 @@ async function requireBoardEditor(req, res, next) {
   return res.status(403).json({ error: 'Only board owner or workspace editor can add members' });
 }
 
+// Middleware: Require task edit permission (gets board_id from task)
+async function requireTaskEdit(req, res, next) {
+  const userId = req.user.id;
+  const taskId = req.params.taskId;
+  
+  if (!taskId) {
+    return res.status(400).json({ error: 'Task ID required' });
+  }
+  
+  try {
+    // Get task's board_id
+    const taskResult = await pool.query(
+      'SELECT board_id FROM tasks WHERE id = $1',
+      [taskId]
+    );
+    
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const boardId = taskResult.rows[0].board_id;
+    
+    // Check board edit permission
+    const permission = await getBoardPermission(userId, boardId);
+    
+    if (permission !== 'edit') {
+      return res.status(403).json({ error: 'Edit permission required' });
+    }
+    
+    req.boardPermission = permission;
+    req.boardId = boardId; // Store for route handler
+    next();
+  } catch (err) {
+    console.error('requireTaskEdit error:', err);
+    return res.status(500).json({ error: 'Permission check failed' });
+  }
+}
+
 module.exports = {
   isWorkspaceOwner,
   getWorkspaceRole,
@@ -283,4 +321,5 @@ module.exports = {
   requireBoardView,
   requireBoardOwner,
   requireBoardEditor,
+  requireTaskEdit,
 };

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(255),
+  avatar TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -189,6 +190,25 @@ CREATE INDEX IF NOT EXISTS idx_board_operations_board ON board_operations(board_
 CREATE INDEX IF NOT EXISTS idx_board_operations_timestamp ON board_operations(timestamp);
 CREATE INDEX IF NOT EXISTS idx_board_operations_operation_id ON board_operations(operation_id);
 CREATE INDEX IF NOT EXISTS idx_board_operations_type ON board_operations(operation_type);
+
+-- =====================================================
+-- TRIGGERS & FUNCTIONS
+-- =====================================================
+
+-- Auto-update updated_at timestamp for users
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at 
+    BEFORE UPDATE ON users 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
 `;
 
 async function migrate() {

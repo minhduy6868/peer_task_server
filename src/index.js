@@ -13,6 +13,7 @@ const boardMembersRoutes = require('./routes/board_members');
 const taskRoutes = require('./routes/tasks');
 const operationRoutes = require('./routes/operations');
 const adminRoutes = require('./routes/admin');
+// const migrationRoutes = require('./routes/migration'); // Commented out - not needed
 const { setupSocketHandlers } = require('./sockets/signaling');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
@@ -39,6 +40,7 @@ app.use('/boards', boardMembersRoutes);
 app.use('/tasks', taskRoutes);
 app.use('/operations', operationRoutes);
 app.use('/admin', adminRoutes);
+// app.use('/migration', migrationRoutes); // Commented out - not needed
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

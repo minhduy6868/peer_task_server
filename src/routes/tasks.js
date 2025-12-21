@@ -2,7 +2,7 @@ const express = require('express');
 const { body, query, validationResult } = require('express-validator');
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
-const { requireBoardEdit, requireBoardView } = require('../middleware/permissions');
+const { requireBoardEdit, requireBoardView, requireTaskEdit } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -246,7 +246,7 @@ router.post('/',
 
 // Update task
 router.put('/:taskId',
-  requireBoardEdit,
+  requireTaskEdit,
   body('title').optional().notEmpty().trim(),
   body('description').optional(),
   body('assignees').optional().isArray(),
@@ -378,7 +378,7 @@ router.put('/:taskId',
 );
 
 // Delete task
-router.delete('/:taskId', requireBoardEdit, async (req, res) => {
+router.delete('/:taskId', requireTaskEdit, async (req, res) => {
   const { taskId } = req.params;
 
   try {

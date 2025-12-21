@@ -13,7 +13,7 @@ const router = express.Router();
 // Get current user
 router.get('/me', authenticateToken, asyncHandler(async (req, res) => {
   const result = await pool.query(
-    'SELECT id, email, name, created_at FROM users WHERE id = $1',
+    'SELECT id, email, name, avatar, created_at, updated_at FROM users WHERE id = $1',
     [req.user.id]
   );
 
@@ -26,7 +26,9 @@ router.get('/me', authenticateToken, asyncHandler(async (req, res) => {
     id: user.id,
     email: user.email,
     name: user.name,
-    createdAt: user.created_at
+    avatar: user.avatar,
+    created_at: user.created_at,
+    updated_at: user.updated_at
   });
 }));
 
@@ -115,7 +117,7 @@ router.post('/login',
 
     // Find user
     const result = await pool.query(
-      'SELECT id, email, name, password_hash, created_at FROM users WHERE email = $1',
+      'SELECT id, email, name, avatar, password_hash, created_at FROM users WHERE email = $1',
       [email]
     );
 
@@ -155,6 +157,7 @@ router.post('/login',
         id: user.id,
         email: user.email,
         name: user.name,
+        avatar: user.avatar,
         createdAt: user.created_at
       },
       accessToken,
@@ -259,6 +262,117 @@ router.post('/reset-password',
       res.status(500).json({ error: 'Server error' });
     }
   }
+);
+
+// Update profile
+router.put('/profile', 
+  authenticateToken,
+  body('name').optional().trim().isLength({ min: 1, max: 100 }),
+  body('avatar').optional().trim(),
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new AppError('Validation failed', 400, 'VALIDATION_ERROR', errors.array());
+    }
+
+    const { name, avatar } = req.body;
+    const userId = req.user.id;
+
+    // Build update query dynamically
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (name !== undefined && name !== null) {
+      updates.push(`name = $${paramCount}`);
+      values.push(name);
+      paramCount++;
+    }
+
+    if (avatar !== undefined && avatar !== null) {
+      updates.push(`avatar = $${paramCount}`);
+      values.push(avatar);
+      paramCount++;
+    }
+
+    if (updates.length === 0) {
+      throw new AppError('No fields to update', 400, 'NO_UPDATES');
+    }
+
+    // Add updated_at
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(userId);
+
+    const query = `
+      UPDATE users 
+      SET ${updates.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, email, name, avatar, created_at, updated_at
+    `;
+
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+    }
+
+    const user = result.rows[0];
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      }
+    });
+  })
+);
+
+// Change password
+router.post('/change-password',
+  authenticateToken,
+  body('currentPassword').notEmpty().withMessage('Current password is required'),
+  body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
+  asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new AppError('Validation failed', 400, 'VALIDATION_ERROR', errors.array());
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    // Get current password hash
+    const result = await pool.query(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+    }
+
+    const user = result.rows[0];
+
+    // Verify current password
+    const validPassword = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!validPassword) {
+      throw new AppError('Current password is incorrect', 401, 'INVALID_PASSWORD');
+    }
+
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [newPasswordHash, userId]
+    );
+
+    res.json({ message: 'Password changed successfully' });
+  })
 );
 
 module.exports = router;
