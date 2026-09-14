@@ -104,6 +104,18 @@ function errorHandler(err, req, res, next) {
 /**
  * 404 Not Found Handler
  */
+function sendError(res, statusCode, message, code = 'UNKNOWN_ERROR', details = null) {
+  return res.status(statusCode).json({
+    success: false,
+    error: {
+      message,
+      code,
+      statusCode,
+      ...(details && { details }),
+    },
+  });
+}
+
 function notFoundHandler(req, res, next) {
   const error = new AppError(
     `Route ${req.originalUrl} not found`,
@@ -126,5 +138,6 @@ module.exports = {
   AppError,
   errorHandler,
   notFoundHandler,
-  asyncHandler
+  asyncHandler,
+  sendError,
 };

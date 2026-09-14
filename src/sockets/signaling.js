@@ -283,24 +283,22 @@ function setupOfflineHandlers(socket, io) {
 
 function leaveRoom(socket, roomId) {
   socket.leave(roomId);
-    
-    if (rooms.has(roomId)) {
-      rooms.get(roomId).delete(socket.id);
-      
-      // Notify other peers
-      socket.to(roomId).emit('peer_left', {
-        socketId: socket.id,
-        userId: socket.userId
-      });
 
-      // Clean up empty rooms
-      if (rooms.get(roomId).size === 0) {
-        rooms.delete(roomId);
-      }
+  if (rooms.has(roomId)) {
+    rooms.get(roomId).delete(socket.id);
+
+    socket.to(roomId).emit('peer_left', {
+      socketId: socket.id,
+      userId: socket.userId
+    });
+
+    if (rooms.get(roomId).size === 0) {
+      rooms.delete(roomId);
     }
-
-    console.log(`👋 ${socket.id} left room ${roomId}`);
   }
+
+  console.log(`👋 ${socket.id} left room ${roomId}`);
+}
 
 
 module.exports = { setupSocketHandlers };

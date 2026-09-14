@@ -1,4 +1,9 @@
 const pool = require('../db/pool');
+const { sendError } = require('./errorHandler');
+
+function wrap(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
 
 /**
  * Permission Middleware - Smart authorization logic
@@ -83,13 +88,13 @@ async function requireWorkspaceMember(req, res, next) {
   const workspaceId = req.params.workspaceId || req.body.workspaceId;
   
   if (!workspaceId) {
-    return res.status(400).json({ error: 'Workspace ID required' });
+    return sendError(res, 400, 'Workspace ID required', 'REQUIRED_FIELD');
   }
   
   const role = await getWorkspaceRole(userId, workspaceId);
   
   if (!role) {
-    return res.status(403).json({ error: 'Not a workspace member' });
+    return sendError(res, 403, 'Not a workspace member', 'FORBIDDEN');
   }
   
   req.workspaceRole = role;
@@ -102,13 +107,13 @@ async function requireWorkspaceOwner(req, res, next) {
   const workspaceId = req.params.workspaceId || req.params.id || req.body.workspaceId;
   
   if (!workspaceId) {
-    return res.status(400).json({ error: 'Workspace ID required' });
+    return sendError(res, 400, 'Workspace ID required', 'REQUIRED_FIELD');
   }
   
   const isOwner = await isWorkspaceOwner(userId, workspaceId);
   
   if (!isOwner) {
-    return res.status(403).json({ error: 'Only workspace owner can perform this action' });
+    return sendError(res, 403, 'Only workspace owner can perform this action', 'FORBIDDEN');
   }
   
   req.workspaceRole = 'owner';
@@ -121,14 +126,14 @@ async function requireWorkspaceEditor(req, res, next) {
   const workspaceId = req.params.workspaceId || req.body.workspaceId;
   
   if (!workspaceId) {
-    return res.status(400).json({ error: 'Workspace ID required' });
+    return sendError(res, 400, 'Workspace ID required', 'REQUIRED_FIELD');
   }
   
   const isOwner = await isWorkspaceOwner(userId, workspaceId);
   const role = await getWorkspaceRole(userId, workspaceId);
   
   if (!isOwner && role !== 'editor') {
-    return res.status(403).json({ error: 'Requires editor or owner role' });
+    return sendError(res, 403, 'Requires editor or owner role', 'FORBIDDEN');
   }
   
   req.workspaceRole = isOwner ? 'owner' : role;
@@ -141,13 +146,13 @@ async function requireBoardEdit(req, res, next) {
   const boardId = req.params.boardId || req.body.boardId;
   
   if (!boardId) {
-    return res.status(400).json({ error: 'Board ID required' });
+    return sendError(res, 400, 'Board ID required', 'REQUIRED_FIELD');
   }
   
   const permission = await getBoardPermission(userId, boardId);
   
   if (permission !== 'edit') {
-    return res.status(403).json({ error: 'Edit permission required' });
+    return sendError(res, 403, 'Edit permission required', 'FORBIDDEN');
   }
   
   req.boardPermission = permission;
@@ -160,13 +165,13 @@ async function requireBoardView(req, res, next) {
   const boardId = req.params.boardId || req.body.boardId;
   
   if (!boardId) {
-    return res.status(400).json({ error: 'Board ID required' });
+    return sendError(res, 400, 'Board ID required', 'REQUIRED_FIELD');
   }
   
   const permission = await getBoardPermission(userId, boardId);
   
   if (!permission) {
-    return res.status(403).json({ error: 'Board access denied' });
+    return sendError(res, 403, 'Board access denied', 'FORBIDDEN');
   }
   
   req.boardPermission = permission;
@@ -179,7 +184,7 @@ async function requireBoardOwner(req, res, next) {
   const boardId = req.params.boardId || req.params.id || req.body.boardId;
   
   if (!boardId) {
-    return res.status(400).json({ error: 'Board ID required' });
+    return sendError(res, 400, 'Board ID required', 'REQUIRED_FIELD');
   }
   
   // Get board's workspace
@@ -189,7 +194,7 @@ async function requireBoardOwner(req, res, next) {
   );
   
   if (boardResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Board not found' });
+    return sendError(res, 404, 'Board not found', 'BOARD_NOT_FOUND');
   }
   
   const workspaceId = boardResult.rows[0].workspace_id;
@@ -206,7 +211,7 @@ async function requireBoardOwner(req, res, next) {
   // Check if board owner
   const isBOwner = await isBoardOwner(userId, boardId);
   if (!isBOwner) {
-    return res.status(403).json({ error: 'Only board owner can perform this action' });
+    return sendError(res, 403, 'Only board owner can perform this action', 'FORBIDDEN');
   }
   
   req.isBoardOwner = true;
@@ -220,7 +225,7 @@ async function requireBoardEditor(req, res, next) {
   const boardId = req.params.boardId || req.params.id || req.body.boardId;
   
   if (!boardId) {
-    return res.status(400).json({ error: 'Board ID required' });
+    return sendError(res, 400, 'Board ID required', 'REQUIRED_FIELD');
   }
   
   // Get board's workspace
@@ -230,7 +235,7 @@ async function requireBoardEditor(req, res, next) {
   );
   
   if (boardResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Board not found' });
+    return sendError(res, 404, 'Board not found', 'BOARD_NOT_FOUND');
   }
   
   const workspaceId = boardResult.rows[0].workspace_id;
@@ -268,7 +273,7 @@ async function requireBoardEditor(req, res, next) {
     return next();
   }
   
-  return res.status(403).json({ error: 'Only board owner or workspace editor can add members' });
+  return sendError(res, 403, 'Only board owner or workspace editor can add members', 'FORBIDDEN');
 }
 
 // Middleware: Require task edit permission (gets board_id from task)
@@ -277,7 +282,7 @@ async function requireTaskEdit(req, res, next) {
   const taskId = req.params.taskId;
   
   if (!taskId) {
-    return res.status(400).json({ error: 'Task ID required' });
+    return sendError(res, 400, 'Task ID required', 'REQUIRED_FIELD');
   }
   
   try {
@@ -288,7 +293,7 @@ async function requireTaskEdit(req, res, next) {
     );
     
     if (taskResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Task not found' });
+      return sendError(res, 404, 'Task not found', 'TASK_NOT_FOUND');
     }
     
     const boardId = taskResult.rows[0].board_id;
@@ -297,7 +302,7 @@ async function requireTaskEdit(req, res, next) {
     const permission = await getBoardPermission(userId, boardId);
     
     if (permission !== 'edit') {
-      return res.status(403).json({ error: 'Edit permission required' });
+      return sendError(res, 403, 'Edit permission required', 'FORBIDDEN');
     }
     
     req.boardPermission = permission;
@@ -305,7 +310,7 @@ async function requireTaskEdit(req, res, next) {
     next();
   } catch (err) {
     console.error('requireTaskEdit error:', err);
-    return res.status(500).json({ error: 'Permission check failed' });
+    return sendError(res, 500, 'Permission check failed', 'SERVER_ERROR');
   }
 }
 
@@ -314,12 +319,12 @@ module.exports = {
   getWorkspaceRole,
   getBoardPermission,
   isBoardOwner,
-  requireWorkspaceMember,
-  requireWorkspaceOwner,
-  requireWorkspaceEditor,
-  requireBoardEdit,
-  requireBoardView,
-  requireBoardOwner,
-  requireBoardEditor,
-  requireTaskEdit,
+  requireWorkspaceMember: wrap(requireWorkspaceMember),
+  requireWorkspaceOwner: wrap(requireWorkspaceOwner),
+  requireWorkspaceEditor: wrap(requireWorkspaceEditor),
+  requireBoardEdit: wrap(requireBoardEdit),
+  requireBoardView: wrap(requireBoardView),
+  requireBoardOwner: wrap(requireBoardOwner),
+  requireBoardEditor: wrap(requireBoardEditor),
+  requireTaskEdit: wrap(requireTaskEdit),
 };

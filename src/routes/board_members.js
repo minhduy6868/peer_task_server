@@ -2,22 +2,18 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
-const { getBoardPermission, isBoardOwner, requireBoardOwner, requireBoardEditor, getWorkspaceRole } = require('../middleware/permissions');
+const { getBoardPermission, requireBoardOwner, requireBoardEditor } = require('../middleware/permissions');
+const { sendError, asyncHandler } = require('../middleware/errorHandler');
 
-// Get board members and their permissions
-router.get('/:boardId/members', authenticateToken, async (req, res) => {
-  try {
-    const { boardId } = req.params;
-    const userId = req.user.id;
-    
-    // Check if user has access to this board
-    const userPermission = await getBoardPermission(userId, boardId);
-    if (!userPermission) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    
-    const result = await pool.query(
-      `SELECT 
+router.get('/:boardId/members', authenticateToken, asyncHandler(async (req, res) => {
+  const { boardId } = req.params;
+  const userPermission = await getBoardPermission(req.user.id, boardId);
+  if (!userPermission) {
+    return sendError(res, 403, 'Access denied', 'FORBIDDEN');
+  }
+
+  const result = await pool.query(
+    `SELECT 
         u.id as user_id, 
         u.name, 
         u.email,
@@ -37,144 +33,102 @@ router.get('/:boardId/members', authenticateToken, async (req, res) => {
           ELSE 2 
         END,
         bm.added_at ASC`,
-      [boardId]
-    );
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Get board members error:', error);
-    res.status(500).json({ error: 'Failed to get board members' });
-  }
-});
+    [boardId]
+  );
 
-// Add board member with permission (board owner or editor role in workspace)
-router.post('/:boardId/members', authenticateToken, requireBoardEditor, async (req, res) => {
-  try {
-    const { boardId } = req.params;
-    const { userId, permission = 'view' } = req.body;
-    const addedBy = req.user.id;
-    const workspaceId = req.workspaceId; // From middleware
-    
-    console.log(`ADD BOARD MEMBER REQUEST: board=${boardId}, user=${userId}, permission=${permission}, addedBy=${addedBy}`);
-    
-    // Validate permission
-    if (!['edit', 'view'].includes(permission)) {
-      console.log('ERROR: Invalid permission');
-      return res.status(400).json({ error: 'Invalid permission. Use: edit, view' });
-    }
-    
-    // Check if user exists
-    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
-    if (userCheck.rows.length === 0) {
-      console.log('ERROR: User not found');
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Check if user is in workspace
-    const workspaceMember = await pool.query(
-      'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
-      [workspaceId, userId]
-    );
-    
-    if (workspaceMember.rows.length === 0) {
-      console.log('ERROR: User not in workspace');
-      return res.status(400).json({ error: 'User must be workspace member first' });
-    }
-    
-    const memberWorkspaceRole = workspaceMember.rows[0].role;
-    console.log(`User workspace role: ${memberWorkspaceRole}`);
-    
-    // Workspace viewers CAN have edit permission in specific boards
-    // This allows flexible board-level permissions independent of workspace role
-    
-    console.log('Executing INSERT board_members query...');
-    // Add board member
-    const result = await pool.query(
-      `INSERT INTO board_members (board_id, user_id, permission, added_by)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (board_id, user_id) 
-       DO UPDATE SET permission = $3, added_by = $4
-       RETURNING *`,
-      [boardId, userId, permission, addedBy]
-    );
-    
-    console.log('SUCCESS: Board member added/updated', result.rows[0]);
-    res.json({ message: 'Board member added successfully', member: result.rows[0] });
-  } catch (error) {
-    console.error('Add board member error:', error);
-    res.status(500).json({ error: 'Failed to add board member' });
-  }
-});
+  res.json(result.rows);
+}));
 
-// Update board member permission (board owner or workspace owner only)
-router.put('/:boardId/members/:userId', authenticateToken, requireBoardOwner, async (req, res) => {
-  try {
-    const { boardId, userId } = req.params;
-    const { permission } = req.body;
-    
-    // Validate permission
-    if (!['edit', 'view'].includes(permission)) {
-      return res.status(400).json({ error: 'Invalid permission. Use: edit, view' });
-    }
-    
-    // Cannot change board owner permission
-    const ownerCheck = await pool.query(
-      'SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE',
-      [boardId, userId]
-    );
-    
-    if (ownerCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Cannot change board owner permission' });
-    }
-    
-    const result = await pool.query(
-      `UPDATE board_members 
-       SET permission = $1 
-       WHERE board_id = $2 AND user_id = $3
-       RETURNING *`,
-      [permission, boardId, userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Board member not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Update board member error:', error);
-    res.status(500).json({ error: 'Failed to update board member' });
-  }
-});
+router.post('/:boardId/members', authenticateToken, requireBoardEditor, asyncHandler(async (req, res) => {
+  const { boardId } = req.params;
+  const { userId, permission = 'view' } = req.body;
+  const addedBy = req.user.id;
+  const workspaceId = req.workspaceId;
 
-// Remove board member (board owner or workspace owner only)
-router.delete('/:boardId/members/:userId', authenticateToken, requireBoardOwner, async (req, res) => {
-  try {
-    const { boardId, userId } = req.params;
-    
-    // Cannot remove board owner
-    const ownerCheck = await pool.query(
-      'SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE',
-      [boardId, userId]
-    );
-    
-    if (ownerCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Cannot remove board owner' });
-    }
-    
-    const result = await pool.query(
-      'DELETE FROM board_members WHERE board_id = $1 AND user_id = $2 RETURNING *',
-      [boardId, userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Board member not found' });
-    }
-    
-    res.json({ message: 'Board member removed successfully' });
-  } catch (error) {
-    console.error('Remove board member error:', error);
-    res.status(500).json({ error: 'Failed to remove board member' });
+  if (!['edit', 'view'].includes(permission)) {
+    return sendError(res, 400, 'Invalid permission. Use: edit, view', 'VALIDATION_ERROR');
   }
-});
+
+  const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+  if (userCheck.rows.length === 0) {
+    return sendError(res, 404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  const workspaceMember = await pool.query(
+    'SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+    [workspaceId, userId]
+  );
+
+  if (workspaceMember.rows.length === 0) {
+    return sendError(res, 400, 'User must be workspace member first', 'VALIDATION_ERROR');
+  }
+
+  const result = await pool.query(
+    `INSERT INTO board_members (board_id, user_id, permission, added_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (board_id, user_id) 
+     DO UPDATE SET permission = $3, added_by = $4
+     RETURNING *`,
+    [boardId, userId, permission, addedBy]
+  );
+
+  res.status(201).json({ message: 'Board member added successfully', member: result.rows[0] });
+}));
+
+router.put('/:boardId/members/:userId', authenticateToken, requireBoardOwner, asyncHandler(async (req, res) => {
+  const { boardId, userId } = req.params;
+  const { permission } = req.body;
+
+  if (!['edit', 'view'].includes(permission)) {
+    return sendError(res, 400, 'Invalid permission. Use: edit, view', 'VALIDATION_ERROR');
+  }
+
+  const ownerCheck = await pool.query(
+    'SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE',
+    [boardId, userId]
+  );
+
+  if (ownerCheck.rows.length > 0) {
+    return sendError(res, 400, 'Cannot change board owner permission', 'VALIDATION_ERROR');
+  }
+
+  const result = await pool.query(
+    `UPDATE board_members 
+     SET permission = $1 
+     WHERE board_id = $2 AND user_id = $3
+     RETURNING *`,
+    [permission, boardId, userId]
+  );
+
+  if (result.rows.length === 0) {
+    return sendError(res, 404, 'Board member not found', 'NOT_FOUND');
+  }
+
+  res.json(result.rows[0]);
+}));
+
+router.delete('/:boardId/members/:userId', authenticateToken, requireBoardOwner, asyncHandler(async (req, res) => {
+  const { boardId, userId } = req.params;
+
+  const ownerCheck = await pool.query(
+    'SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2 AND is_board_owner = TRUE',
+    [boardId, userId]
+  );
+
+  if (ownerCheck.rows.length > 0) {
+    return sendError(res, 400, 'Cannot remove board owner', 'VALIDATION_ERROR');
+  }
+
+  const result = await pool.query(
+    'DELETE FROM board_members WHERE board_id = $1 AND user_id = $2 RETURNING *',
+    [boardId, userId]
+  );
+
+  if (result.rows.length === 0) {
+    return sendError(res, 404, 'Board member not found', 'NOT_FOUND');
+  }
+
+  res.json({ message: 'Board member removed successfully' });
+}));
 
 module.exports = router;

@@ -2,15 +2,14 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
-const { requireWorkspaceOwner } = require('../middleware/permissions');
+const { requireWorkspaceOwner, requireWorkspaceMember } = require('../middleware/permissions');
+const { sendError, asyncHandler } = require('../middleware/errorHandler');
 
-// Get workspace members
-router.get('/:workspaceId/members', authenticateToken, async (req, res) => {
-  try {
-    const { workspaceId } = req.params;
-    
-    const result = await pool.query(
-      `SELECT 
+router.get('/:workspaceId/members', authenticateToken, requireWorkspaceMember, asyncHandler(async (req, res) => {
+  const { workspaceId } = req.params;
+
+  const result = await pool.query(
+    `SELECT 
         u.id as user_id, 
         u.name, 
         u.email,
@@ -26,125 +25,90 @@ router.get('/:workspaceId/members', authenticateToken, async (req, res) => {
           ELSE 3 
         END,
         wm.joined_at ASC`,
-      [workspaceId]
-    );
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Get members error:', error);
-    res.status(500).json({ error: 'Failed to get members' });
-  }
-});
+    [workspaceId]
+  );
 
-// Add workspace member (owner only)
-router.post('/:workspaceId/members', authenticateToken, requireWorkspaceOwner, async (req, res) => {
-  try {
-    const { workspaceId } = req.params;
-    const { userId, role = 'viewer' } = req.body;
-    
-    // Validate role
-    if (!['editor', 'viewer'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. Use: editor, viewer' });
-    }
-    
-    // Check if user exists
-    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
-    if (userCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Add member
-    await pool.query(
-      `INSERT INTO workspace_members (workspace_id, user_id, role)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (workspace_id, user_id) 
-       DO UPDATE SET role = $3`,
-      [workspaceId, userId, role]
-    );
-    
-    res.json({ message: 'Member added successfully' });
-  } catch (error) {
-    console.error('Add member error:', error);
-    res.status(500).json({ error: 'Failed to add member' });
-  }
-});
+  res.json(result.rows);
+}));
 
-// Update member role (owner only)
-router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceOwner, async (req, res) => {
-  try {
-    const { workspaceId, userId } = req.params;
-    const { role } = req.body;
-    
-    console.log(`UPDATE ROLE REQUEST: workspace=${workspaceId}, user=${userId}, newRole=${role}`);
-    
-    // Validate role
-    if (!['editor', 'viewer'].includes(role)) {
-      console.log('ERROR: Invalid role');
-      return res.status(400).json({ error: 'Invalid role. Use: editor, viewer' });
-    }
-    
-    // Cannot change workspace owner role
-    const ownerCheck = await pool.query(
-      'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
-      [workspaceId, userId]
-    );
-    
-    if (ownerCheck.rows.length > 0) {
-      console.log('ERROR: Cannot change owner role');
-      return res.status(400).json({ error: 'Cannot change owner role' });
-    }
-    
-    console.log('Executing UPDATE query...');
-    const result = await pool.query(
-      `UPDATE workspace_members 
-       SET role = $1 
-       WHERE workspace_id = $2 AND user_id = $3
-       RETURNING *`,
-      [role, workspaceId, userId]
-    );
-    
-    if (result.rows.length === 0) {
-      console.log('ERROR: Member not found in workspace_members table');
-      return res.status(404).json({ error: 'Member not found' });
-    }
-    
-    console.log('SUCCESS: Role updated to', result.rows[0]);
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Update member error:', error);
-    res.status(500).json({ error: 'Failed to update member' });
-  }
-});
+router.post('/:workspaceId/members', authenticateToken, requireWorkspaceOwner, asyncHandler(async (req, res) => {
+  const { workspaceId } = req.params;
+  const { userId, role = 'viewer' } = req.body;
 
-// Remove member (owner only)
-router.delete('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceOwner, async (req, res) => {
-  try {
-    const { workspaceId, userId } = req.params;
-    
-    // Cannot remove workspace owner
-    const ownerCheck = await pool.query(
-      'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
-      [workspaceId, userId]
-    );
-    
-    if (ownerCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Cannot remove workspace owner' });
-    }
-    
-    const result = await pool.query(
-      'DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 RETURNING *',
-      [workspaceId, userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Member not found' });
-    }
-    
-    res.json({ message: 'Member removed successfully' });
-  } catch (error) {
-    console.error('Remove member error:', error);
-    res.status(500).json({ error: 'Failed to remove member' });
+  if (!['editor', 'viewer'].includes(role)) {
+    return sendError(res, 400, 'Invalid role. Use: editor, viewer', 'VALIDATION_ERROR');
   }
-});
+
+  const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+  if (userCheck.rows.length === 0) {
+    return sendError(res, 404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (workspace_id, user_id) 
+     DO UPDATE SET role = $3`,
+    [workspaceId, userId, role]
+  );
+
+  res.status(201).json({ message: 'Member added successfully' });
+}));
+
+router.put('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceOwner, asyncHandler(async (req, res) => {
+  const { workspaceId, userId } = req.params;
+  const { role } = req.body;
+
+  if (!['editor', 'viewer'].includes(role)) {
+    return sendError(res, 400, 'Invalid role. Use: editor, viewer', 'VALIDATION_ERROR');
+  }
+
+  const ownerCheck = await pool.query(
+    'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
+    [workspaceId, userId]
+  );
+
+  if (ownerCheck.rows.length > 0) {
+    return sendError(res, 400, 'Cannot change owner role', 'VALIDATION_ERROR');
+  }
+
+  const result = await pool.query(
+    `UPDATE workspace_members 
+     SET role = $1 
+     WHERE workspace_id = $2 AND user_id = $3
+     RETURNING *`,
+    [role, workspaceId, userId]
+  );
+
+  if (result.rows.length === 0) {
+    return sendError(res, 404, 'Member not found', 'NOT_FOUND');
+  }
+
+  res.json(result.rows[0]);
+}));
+
+router.delete('/:workspaceId/members/:userId', authenticateToken, requireWorkspaceOwner, asyncHandler(async (req, res) => {
+  const { workspaceId, userId } = req.params;
+
+  const ownerCheck = await pool.query(
+    'SELECT 1 FROM workspaces WHERE id = $1 AND owner_id = $2',
+    [workspaceId, userId]
+  );
+
+  if (ownerCheck.rows.length > 0) {
+    return sendError(res, 400, 'Cannot remove workspace owner', 'VALIDATION_ERROR');
+  }
+
+  const result = await pool.query(
+    'DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 RETURNING *',
+    [workspaceId, userId]
+  );
+
+  if (result.rows.length === 0) {
+    return sendError(res, 404, 'Member not found', 'NOT_FOUND');
+  }
+
+  res.json({ message: 'Member removed successfully' });
+}));
 
 module.exports = router;
