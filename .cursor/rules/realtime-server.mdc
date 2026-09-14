@@ -1,0 +1,13 @@
+---
+description: Socket.IO signaling and in-memory rooms
+globs: src/sockets/**/*.js,server/src/sockets/**/*.js
+alwaysApply: false
+---
+
+# Realtime (server)
+
+- JWT in `handshake.auth.token`. Missing token ⇒ `isOfflineMode` + offline handlers only.
+- Online: `join_room` is a `boardId` string. Relay `signal` `{ to, signal }`. Emit `room_joined`, `peer_joined`, `peer_left`, `peer_mic_updated`.
+- Offline: `create_room` / `join_room` `{ roomCode, userName }`. Room key `offline_${roomCode}`.
+- Do not dump full board state through Socket.IO. Signaling only. Persist ops via REST `/operations`.
+- Rooms are in-memory. Do not assume they survive process restart.

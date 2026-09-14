@@ -1,0 +1,22 @@
+---
+description: GitHub, branches, Conventional Commits, and PRs for the API server
+alwaysApply: true
+---
+
+# GitHub & commits (server)
+
+Repo: `minhduy6868/peer_task_server`. Default branch: `dev`.
+
+- Branch: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`, `refactor/<slug>`.
+- Commits: Conventional Commits, English, imperative, **why** not file lists.
+
+```
+feat(tasks): filter board tasks by priority and parent
+fix(auth): reject expired refresh tokens as revoked
+```
+
+Scopes: `auth`, `workspace`, `board`, `task`, `ops`, `socket`, `db`, `ai`.
+- One concern per commit. Never `--no-verify`, force-push `dev`/`main`, or commit `.env`.
+- PR into `dev`: title = same as commit style. Body: Summary + Test plan. Use `gh pr create` from `server/`.
+- Do not include `client/` files in this repo’s commits.
+- Migrations: mention them in the PR Test plan (`npm run db:migrate` / extra scripts).

@@ -1,0 +1,19 @@
+---
+description: Workspace and board authorization
+globs: src/middleware/permissions.js,src/routes/**/*.js,server/src/middleware/permissions.js,server/src/routes/**/*.js
+alwaysApply: false
+---
+
+# Permissions
+
+| Level | Values | Meaning |
+| --- | --- | --- |
+| Workspace | `owner` | All boards, members, delete workspace |
+| Workspace | `editor` | Create boards; only boards they belong to |
+| Workspace | `viewer` | No create; only boards they belong to |
+| Board | `edit` / `view` | Content + tasks vs read-only |
+| Board | `is_board_owner` | Manage board members |
+
+- Workspace owner ⇒ board `edit` without a `board_members` row.
+- Use existing helpers in `middleware/permissions.js`. Never trust client-sent `role` / `permission`.
+- Assignees must be on the board (or workspace owner).

@@ -1,0 +1,13 @@
+---
+description: PeerTask Express server — always-on conventions
+alwaysApply: true
+---
+
+# Server core
+
+- This folder is the API only. Do not edit `../client`.
+- Read `AGENTS.md` and the matching skill under `.cursor/skills/`.
+- No `/api` prefix. Mounts: `/auth`, `/token`, `/workspaces`, `/boards`, `/tasks`, `/operations`, `/admin`, `/ai`, `/health`.
+- Mutating routes: `authenticateToken` + permission middleware + parameterized SQL.
+- Errors: `AppError` + `asyncHandler`. Shape `{ success: false, error: { message, code, statusCode } }`.
+- Never commit `.env`, `JWT_SECRET`, or Cloudinary/EmailJS keys.

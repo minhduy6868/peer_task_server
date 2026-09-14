@@ -1,0 +1,14 @@
+---
+description: REST request and response contract
+globs: src/routes/**/*.js,server/src/routes/**/*.js
+alwaysApply: false
+---
+
+# API contract
+
+- Auth: `POST /auth/register|login`, `GET /auth/me`, `PUT /auth/profile`, `POST /auth/change-password`, `POST /token/refresh`, `POST /token/logout`.
+- Tokens: `accessToken`, `refreshToken`. JSON columns stay `snake_case` (Dart maps both).
+- Workspace roles: `owner|editor|viewer`. Board: `edit|view` + `is_board_owner`.
+- Tasks: `todo|doing|done`, `low|medium|high|urgent`. Assignees must be board members or workspace owner.
+- Operations: `{ boardId, operationId, operationType, payload, timestamp }`. Dup `operationId` → 200.
+- Stable error codes: `VALIDATION_ERROR`, `EMAIL_EXISTS`, `FORBIDDEN`, `BOARD_NOT_FOUND`.
