@@ -1,4 +1,5 @@
 const express = require('express');
+const { sendError } = require('../middleware/errorHandler');
 const router = express.Router();
 
 // Ollama URL (local)
@@ -22,14 +23,10 @@ router.get('/health', async (req, res) => {
         models: data.models?.map(m => m.name) || []
       });
     } else {
-      res.status(503).json({ status: 'error', message: 'Ollama not responding' });
+      return sendError(res, 503, 'Ollama not responding', 'SERVER_ERROR');
     }
   } catch (error) {
-    res.status(503).json({ 
-      status: 'error', 
-      message: 'Cannot connect to Ollama',
-      hint: 'Make sure Ollama is running: ollama serve'
-    });
+    return sendError(res, 503, 'Cannot connect to Ollama', 'SERVER_ERROR');
   }
 });
 
@@ -40,7 +37,7 @@ router.get('/tags', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(503).json({ error: 'Cannot connect to Ollama' });
+    return sendError(res, 503, 'Cannot connect to Ollama', 'SERVER_ERROR');
   }
 });
 
@@ -55,7 +52,7 @@ router.post('/generate', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(503).json({ error: 'Cannot connect to Ollama' });
+    return sendError(res, 503, 'Cannot connect to Ollama', 'SERVER_ERROR');
   }
 });
 
@@ -69,7 +66,7 @@ router.post('/generate/stream', async (req, res) => {
     });
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: 'Ollama error' });
+      return sendError(res, response.status, 'Ollama error', 'SERVER_ERROR');
     }
 
     // Set headers for streaming
@@ -90,7 +87,7 @@ router.post('/generate/stream', async (req, res) => {
     res.end();
   } catch (error) {
     console.error('Ollama stream error:', error);
-    res.status(503).json({ error: 'Cannot connect to Ollama' });
+    return sendError(res, 503, 'Cannot connect to Ollama', 'SERVER_ERROR');
   }
 });
 
@@ -105,7 +102,7 @@ router.post('/chat', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(503).json({ error: 'Cannot connect to Ollama' });
+    return sendError(res, 503, 'Cannot connect to Ollama', 'SERVER_ERROR');
   }
 });
 

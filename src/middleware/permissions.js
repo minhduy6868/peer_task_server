@@ -85,7 +85,7 @@ async function isBoardOwner(userId, boardId) {
 // Middleware: Require workspace membership
 async function requireWorkspaceMember(req, res, next) {
   const userId = req.user.id;
-  const workspaceId = req.params.workspaceId || req.body.workspaceId;
+  const workspaceId = req.params.workspaceId || req.params.id || req.body.workspaceId;
   
   if (!workspaceId) {
     return sendError(res, 400, 'Workspace ID required', 'REQUIRED_FIELD');
@@ -123,7 +123,7 @@ async function requireWorkspaceOwner(req, res, next) {
 // Middleware: Require workspace editor or owner (can create boards)
 async function requireWorkspaceEditor(req, res, next) {
   const userId = req.user.id;
-  const workspaceId = req.params.workspaceId || req.body.workspaceId;
+  const workspaceId = req.params.workspaceId || req.params.id || req.body.workspaceId;
   
   if (!workspaceId) {
     return sendError(res, 400, 'Workspace ID required', 'REQUIRED_FIELD');
@@ -143,7 +143,7 @@ async function requireWorkspaceEditor(req, res, next) {
 // Middleware: Require board edit permission
 async function requireBoardEdit(req, res, next) {
   const userId = req.user.id;
-  const boardId = req.params.boardId || req.body.boardId;
+  const boardId = req.params.boardId || req.params.id || req.body.boardId;
   
   if (!boardId) {
     return sendError(res, 400, 'Board ID required', 'REQUIRED_FIELD');
@@ -162,7 +162,7 @@ async function requireBoardEdit(req, res, next) {
 // Middleware: Require board view permission (view or edit)
 async function requireBoardView(req, res, next) {
   const userId = req.user.id;
-  const boardId = req.params.boardId || req.body.boardId;
+  const boardId = req.params.boardId || req.params.id || req.body.boardId;
   
   if (!boardId) {
     return sendError(res, 400, 'Board ID required', 'REQUIRED_FIELD');
