@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: peertask-api
+  namespace: peertask
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/affinity: cookie
+    nginx.ingress.kubernetes.io/session-cookie-name: peertask-io
+    nginx.ingress.kubernetes.io/session-cookie-expires: "86400"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.peertask.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: peertask-api
+                port:
+                  number: 3000
+  # tls:
+  #   - hosts:
+  #       - api.peertask.example.com
+  #     secretName: peertask-api-tls

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: peertask-api
+  namespace: peertask
+  labels:
+    app.kubernetes.io/name: peertask-api
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  # Optional. Leave empty if Ollama is not deployed.
+  OLLAMA_URL: ""

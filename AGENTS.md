@@ -36,4 +36,4 @@ Codex: `$peertask-api` or `/skills`. Claude: `/peertask-api`.
 
 ## Git
 
-Upstream: `https://github.com/minhduy6868/peer_task_server` (`dev`).
+Upstream: `https://github.com/minhduy6868/peer_task_server` (`dev` develop, `main` deploy).

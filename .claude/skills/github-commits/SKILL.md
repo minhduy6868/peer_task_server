@@ -5,7 +5,7 @@ description: Creates Conventional Commits and GitHub PRs for peer_task_server. U
 
 # GitHub & commits (server)
 
-Repo: `minhduy6868/peer_task_server`. Base branch: `dev`. Work only inside `server/`.
+Repo: `minhduy6868/peer_task_server`. Base branch: `dev`. Production branch: `main`. Work only inside `server/`.
 
 ## Branch
 

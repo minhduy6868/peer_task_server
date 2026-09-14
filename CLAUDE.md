@@ -4,7 +4,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/REQUIREMENTS.md](doc
 
 Express + PostgreSQL + Socket.IO. Always-on project context. Skills: `.claude/skills/` (`/skill-name` or auto when the task matches).
 
-Do not edit `../client`. Commit only in this repo (`peer_task_server`, base `dev`).
+Do not edit `../client`. Commit only in this repo (`peer_task_server`, base `dev`, deploy `main`).
 
 ## Skills
 

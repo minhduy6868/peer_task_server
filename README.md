@@ -40,6 +40,8 @@ npm run dev
 
 Lắng nghe `http://localhost:3000`. Health: `GET /health`.
 
+Docker local: `docker compose up --build`. Deploy GHCR + Kubernetes: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Biến môi trường
 
 Bắt buộc:
@@ -74,7 +76,13 @@ Chi tiết path: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) hoặc skill `peer
 
 ## Git
 
+- `dev` = phát triển. `main` = bản deploy (CD gắn image `:latest`).
 - Branch từ `dev`: `feat/<slug>`, `fix/<slug>`, …
 - Conventional Commits, ví dụ `fix(permissions): grant workspace owner edit on all boards`
 - PR template: `.github/pull_request_template.md`
-- Không commit `.env`. Ghi migration trong Test plan của PR.
+- Không commit `.env` hay `k8s/secret.yaml`. Ghi migration trong Test plan của PR.
+
+## CI/CD
+
+- Push `dev` / `main`: test + build image GHCR (`:dev` / `:latest`).
+- Deploy cluster: Actions → workflow **cd** → Run workflow (cần secret `KUBE_CONFIG`). Chi tiết [docs/DEPLOY.md](docs/DEPLOY.md).
