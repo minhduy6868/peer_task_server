@@ -79,7 +79,7 @@ function setupOnlineHandlers(socket, io) {
       userId: socket.userId,
       userName: userName || socket.userEmail || socket.userId,
       avatar: avatar,
-      isMuted: false  // Default mic is not muted
+      isMuted: true
     });
 
     // Join new room
@@ -119,6 +119,13 @@ function setupOnlineHandlers(socket, io) {
     });
 
     console.log(`✅ ${socket.id} (${userInfo.userName}) joined room ${roomId}. Total peers: ${rooms.get(roomId).size}`);
+  });
+
+  // Relay canvas and task operations to everyone else in the room.
+  socket.on('board_op', (operation) => {
+    const roomId = socketToRoom.get(socket.id);
+    if (!roomId || !operation || typeof operation !== 'object') return;
+    socket.to(roomId).emit('board_op', operation);
   });
 
   // Relay WebRTC signaling messages
