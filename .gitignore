@@ -3,5 +3,10 @@ node_modules/
 .env.*
 !.env.example
 k8s/secret.yaml
+infra/aws/.terraform/
+infra/aws/*.tfstate
+infra/aws/*.tfstate.*
+infra/aws/*.tfvars
+infra/aws/.terraform.lock.hcl
 *.log
 .DS_Store

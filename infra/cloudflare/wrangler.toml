@@ -1,0 +1,4 @@
+name = "peertask-api"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+account_id = "a3a45ac9276a48dd649521958dfacdc4"

@@ -4,6 +4,10 @@
 
 Image: `ghcr.io/minhduy6868/peer_task_server`.
 
+## AWS (IaaS + RDS)
+
+Giai đoạn 1: Terraform trong [`infra/aws/`](../infra/aws/README.md) — EC2 chạy API, Postgres trên **RDS**. Cần AWS CLI trên máy bạn (`aws configure`); agent không giữ key và không `apply` hộ.
+
 ## Local (Docker Compose)
 
 ```bash
@@ -18,7 +22,14 @@ Postgres: `postgresql://peertask:peertask@localhost:5432/peertask`. Đổi `JWT_
 | Workflow | Khi nào | Việc |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | PR / push `dev` + `main` | `npm test` + build Docker (không push) |
-| `.github/workflows/cd.yml` | push `dev` / `main` / tag `v*` | Build + push GHCR (`dev`, `latest`, sha, tag) |
+| `.github/workflows/cd.yml` | push `dev` / `main` / tag `v*` | Test, build + push GHCR (`dev`, `latest`, sha, tag). Push `main` also rolls the API out on EC2 |
+
+Push lên `main` cập nhật máy EC2 đang chạy (`/opt/peer_task_server`, `systemctl restart peertask-api`) qua SSM. Cần:
+
+| Secret / variable | Giá trị |
+| --- | --- |
+| `AWS_DEPLOY_ROLE_ARN` | Role GitHub OIDC được phép `ssm:SendCommand` |
+| `PEERTASK_INSTANCE_ID` | Repository variable, instance id của API |
 
 Deploy Kubernetes **không** chạy tự động. Trong Actions → **cd** → Run workflow, bật `deploy`, cần secret:
 
