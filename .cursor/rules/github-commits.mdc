@@ -20,3 +20,13 @@ Scopes: `auth`, `workspace`, `board`, `task`, `ops`, `socket`, `db`, `ai`.
 - PR into `dev`: title = same as commit style. Body: Summary + Test plan. Use `gh pr create` from `server/`.
 - Do not include `client/` files in this repo’s commits.
 - Migrations: mention them in the PR Test plan (`npm run db:migrate` / extra scripts).
+
+## Ship
+
+The user asked that each finished fix is committed, pushed, and deployed. Do that without asking again.
+
+1. Commit only this repo, Conventional Commits, one concern each. Never stage `infra/aws/*.tfstate` or `.env`.
+2. `git push origin HEAD`.
+3. Fast-forward `main` (`git push origin HEAD:main`) when it is a fast-forward, so production updates.
+4. Push to `main` runs `.github/workflows/cd.yml` job `deploy-ec2`: SSM git reset on the API host and restart `peertask-api`. Kubernetes deploy stays manual.
+5. Skip secrets, questions, and reviews. If `main` cannot fast-forward, say so and do not force-push.

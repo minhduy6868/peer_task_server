@@ -17,7 +17,7 @@ git checkout -b feat/task-stats
 
 ## Commit
 
-Only when the user asks. Never stage `.env`, dumps, or `client/` files.
+A finished fix is already approved to ship: commit, push this branch, and fast-forward `main` when that push is a fast-forward. Production EC2 deploy runs from `.github/workflows/cd.yml` on `main`. Never stage `.env`, `*.tfstate`, dumps, or `client/` files. Do not force-push.
 
 ```
 feat(tasks): return subtask counts on board list
