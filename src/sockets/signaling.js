@@ -5,7 +5,7 @@ const pool = require('../db/pool');
 const rooms = new Map(); // roomId -> Set of socket IDs
 const socketToRoom = new Map(); // socketId -> roomId
 const socketToUser = new Map(); // socketId -> userId
-const socketToUserInfo = new Map(); // socketId -> {userId, userName, avatar, isMuted}
+const socketToUserInfo = new Map(); // socketId -> {userId, userName, avatar, isMuted, isSpeaking}
 
 // Store offline P2P rooms (room code -> room data)
 const offlineRooms = new Map(); // roomCode -> {roomCode, users: Map(socketId -> userName)}
@@ -79,7 +79,8 @@ function setupOnlineHandlers(socket, io) {
       userId: socket.userId,
       userName: userName || socket.userEmail || socket.userId,
       avatar: avatar,
-      isMuted: true
+      isMuted: true,
+      isSpeaking: false
     });
 
     // Join new room
@@ -101,7 +102,8 @@ function setupOnlineHandlers(socket, io) {
           userId: socketToUser.get(id),
           userName: userInfo.userName,
           avatar: userInfo.avatar,
-          isMuted: userInfo.isMuted || false
+          isMuted: userInfo.isMuted || false,
+          isSpeaking: userInfo.isSpeaking || false
         };
       });
 
@@ -115,7 +117,8 @@ function setupOnlineHandlers(socket, io) {
       userId: socket.userId,
       userName: userInfo.userName,
       avatar: userInfo.avatar,
-      isMuted: userInfo.isMuted || false
+      isMuted: userInfo.isMuted || false,
+      isSpeaking: userInfo.isSpeaking || false
     });
 
     console.log(`✅ ${socket.id} (${userInfo.userName}) joined room ${roomId}. Total peers: ${rooms.get(roomId).size}`);
@@ -146,6 +149,7 @@ function setupOnlineHandlers(socket, io) {
     const userInfo = socketToUserInfo.get(socket.id);
     if (userInfo) {
       userInfo.isMuted = isMuted;
+      if (isMuted) userInfo.isSpeaking = false;
       socketToUserInfo.set(socket.id, userInfo);
     }
 
@@ -154,8 +158,28 @@ function setupOnlineHandlers(socket, io) {
       socketId: socket.id,
       isMuted: isMuted
     });
+    if (isMuted) {
+      io.to(roomId).emit('peer_speaking', {
+        socketId: socket.id,
+        speaking: false
+      });
+    }
 
     console.log(`🎤 ${socket.id} mic status updated: ${isMuted ? 'muted' : 'unmuted'}`);
+  });
+
+  socket.on('speaking', ({ speaking }) => {
+    const roomId = socketToRoom.get(socket.id);
+    if (!roomId || typeof speaking !== 'boolean') return;
+    const userInfo = socketToUserInfo.get(socket.id);
+    if (!userInfo) return;
+    const next = speaking && !userInfo.isMuted;
+    if (userInfo.isSpeaking === next) return;
+    userInfo.isSpeaking = next;
+    io.to(roomId).emit('peer_speaking', {
+      socketId: socket.id,
+      speaking: next
+    });
   });
 
   // Leave room
