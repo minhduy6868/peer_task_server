@@ -81,6 +81,26 @@ router.get('/workspace/:workspaceId', requireWorkspaceMember, asyncHandler(async
   res.json(result.rows);
 }));
 
+router.get('/workspace/:workspaceId/summary', requireWorkspaceMember, asyncHandler(async (req, res) => {
+  const { workspaceId } = req.params;
+  const userId = req.user.id;
+  const isOwner = req.workspaceRole === 'owner';
+  const result = await pool.query(
+    `SELECT b.id AS board_id,
+        COUNT(t.id) FILTER (WHERE t.status = 'todo') AS todo_count,
+        COUNT(t.id) FILTER (WHERE t.status = 'doing') AS doing_count,
+        COUNT(t.id) FILTER (WHERE t.status = 'done') AS done_count,
+        COUNT(t.id) FILTER (WHERE t.deadline < NOW() AND t.status <> 'done') AS overdue_count
+     FROM boards b
+     ${isOwner ? '' : 'INNER JOIN board_members bm ON b.id = bm.board_id AND bm.user_id = $2'}
+     LEFT JOIN tasks t ON t.board_id = b.id AND t.parent_id IS NULL
+     WHERE b.workspace_id = $1
+     GROUP BY b.id`,
+    isOwner ? [workspaceId] : [workspaceId, userId]
+  );
+  res.json(result.rows);
+}));
+
 router.get('/:id', requireBoardView, asyncHandler(async (req, res) => {
   const result = await pool.query('SELECT * FROM boards WHERE id = $1', [req.params.id]);
   if (result.rows.length === 0) {

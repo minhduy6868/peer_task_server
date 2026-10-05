@@ -360,12 +360,18 @@ router.get('/board/:boardId/stats', requireBoardView, asyncHandler(async (req, r
   res.json(result.rows[0]);
 }));
 
-router.get('/my-tasks', asyncHandler(async (req, res) => {
-  const { status, limit = 50 } = req.query;
+router.get('/my-tasks',
+  query('workspaceId').optional().isUUID(),
+  query('status').optional().isIn(['todo', 'doing', 'done']),
+  query('open').optional().isIn(['true', 'false']),
+  asyncHandler(async (req, res) => {
+  assertValid(req);
+  const { status, limit = 50, workspaceId, open } = req.query;
   const values = [req.user.id];
   let sql = `
     SELECT t.*,
            b.name as board_name,
+           w.id as workspace_id,
            w.name as workspace_name,
            u.name as creator_name
     FROM tasks t
@@ -373,11 +379,22 @@ router.get('/my-tasks', asyncHandler(async (req, res) => {
     JOIN workspaces w ON b.workspace_id = w.id
     LEFT JOIN users u ON t.created_by = u.id
     WHERE $1 = ANY(t.assignees)
+      AND EXISTS (
+        SELECT 1 FROM workspace_members wm
+        WHERE wm.workspace_id = w.id AND wm.user_id = $1
+      )
   `;
   let paramCount = 2;
+  if (workspaceId) {
+    sql += ` AND w.id = $${paramCount++}`;
+    values.push(workspaceId);
+  }
   if (status) {
     sql += ` AND t.status = $${paramCount++}`;
     values.push(status);
+  }
+  if (open === 'true') {
+    sql += ` AND t.status <> 'done'`;
   }
   sql += ` ORDER BY
       CASE WHEN t.deadline IS NOT NULL AND t.deadline < NOW() THEN 0 ELSE 1 END,
