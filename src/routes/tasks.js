@@ -17,18 +17,19 @@ function assertValid(req) {
 
 async function validateAssignees(boardId, assigneeIds) {
   if (!assigneeIds || assigneeIds.length === 0) return;
-  for (const assigneeId of assigneeIds) {
-    const result = await pool.query(
-      `SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2
-       UNION
-       SELECT 1 FROM boards b
-       JOIN workspace_members wm ON b.workspace_id = wm.workspace_id
-       WHERE b.id = $1 AND wm.user_id = $2 AND wm.role = 'owner'`,
-      [boardId, assigneeId]
-    );
-    if (result.rows.length === 0) {
-      throw new AppError(`User ${assigneeId} is not a member of this board`, 400, 'VALIDATION_ERROR');
-    }
+  const result = await pool.query(
+    `SELECT wm.user_id
+     FROM boards b
+     JOIN workspace_members wm ON wm.workspace_id = b.workspace_id
+     WHERE b.id = $1 AND wm.user_id = ANY($2::uuid[])
+     UNION
+     SELECT bm.user_id
+     FROM board_members bm
+     WHERE bm.board_id = $1 AND bm.user_id = ANY($2::uuid[])`,
+    [boardId, assigneeIds]
+  );
+  if (result.rows.length !== new Set(assigneeIds).size) {
+    throw new AppError('Assignee is not a member of this workspace', 400, 'VALIDATION_ERROR');
   }
 }
 
