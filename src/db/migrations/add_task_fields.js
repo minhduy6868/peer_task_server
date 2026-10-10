@@ -45,15 +45,6 @@ BEGIN
       CHECK (priority IN ('low', 'medium', 'high', 'urgent'));
   END IF;
 END $$;
-
--- Update existing assignee names to assignee_id where possible
--- This tries to match existing assignee names to user names
-UPDATE tasks t
-SET assignee_id = u.id
-FROM users u
-WHERE t.assignee IS NOT NULL 
-  AND t.assignee_id IS NULL
-  AND LOWER(t.assignee) = LOWER(u.name);
 `;
 
 async function runMigration() {
