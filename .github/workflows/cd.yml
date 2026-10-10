@@ -68,7 +68,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy-ec2:
-    needs: test
+    needs: [test, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -101,20 +101,18 @@ jobs:
             echo "Add repository variable PEERTASK_INSTANCE_ID."
             exit 1
           fi
+          TAG="${GIT_SHA:0:7}"
           PARAMS=$(mktemp)
-          cat > "$PARAMS" <<'EOS'
+          cat > "$PARAMS" <<EOS
           {
             "commands": [
               "set -eux",
-              "cd /opt/peer_task_server",
-              "git fetch --depth 1 origin main",
-              "git reset --hard FETCH_HEAD",
-              "NPM=/usr/bin/npm-20; [ -x \"$NPM\" ] || NPM=/usr/bin/npm",
-              "NODE=/usr/bin/node-20; [ -x \"$NODE\" ] || NODE=/usr/bin/node",
-              "\"$NPM\" ci --omit=dev",
-              "\"$NODE\" src/db/migrate.js || true",
-              "systemctl restart peertask-api",
-              "for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS http://127.0.0.1:3000/health && exit 0; sleep 2; done",
+              "systemctl disable --now peertask-api || true",
+              "docker pull ghcr.io/${{ env.IMAGE_NAME }}:${TAG}",
+              "docker rm -f peertask-api || true",
+              "docker run -d --name peertask-api --restart unless-stopped --env-file /etc/peertask.env -p 3000:3000 ghcr.io/${{ env.IMAGE_NAME }}:${TAG}",
+              "for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do curl -fsS http://127.0.0.1:3000/health && exit 0; sleep 3; done",
+              "docker logs peertask-api | tail -n 40",
               "exit 1"
             ]
           }

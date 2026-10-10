@@ -22,9 +22,9 @@ Postgres: `postgresql://peertask:peertask@localhost:5432/peertask`. Đổi `JWT_
 | Workflow | Khi nào | Việc |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | PR / push `dev` + `main` | `npm test` + build Docker (không push) |
-| `.github/workflows/cd.yml` | push `dev` / `main` / tag `v*` | Test, build + push GHCR (`dev`, `latest`, sha, tag). Push `main` rolls the API out on EC2 and, when `KUBE_CONFIG` is set, on K3s |
+| `.github/workflows/cd.yml` | push `dev` / `main` / tag `v*` | Test, build + push GHCR (`dev`, `latest`, sha, tag). Push `main` recreates the API container on EC2 and rolls the K3s pod |
 
-Push lên `main` cập nhật máy EC2 đang chạy (`/opt/peer_task_server`, `systemctl restart peertask-api`) qua SSM. Cần:
+Push lên `main` kéo image theo commit và chạy lại container `peertask-api` trên EC2 (`docker run`, cổng 3000, env `/etc/peertask.env`). Unit systemd bị tắt. Cần:
 
 | Secret / variable | Giá trị |
 | --- | --- |
