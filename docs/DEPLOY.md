@@ -31,7 +31,7 @@ Push lên `main` cập nhật máy EC2 đang chạy (`/opt/peer_task_server`, `s
 | `AWS_DEPLOY_ROLE_ARN` | Role GitHub OIDC được phép `ssm:SendCommand` |
 | `PEERTASK_INSTANCE_ID` | Repository variable, instance id của API |
 
-Push `main` cũng apply `k8s/` lên K3s khi secret sau có giá trị. Chưa có secret thì job bỏ qua và EC2 vẫn là API public.
+Push `main` rollout pod K3s. Có `KUBE_CONFIG` thì Actions gọi kubectl trực tiếp. Chưa có secret thì Actions gửi lệnh SSM tới EC2, nơi K3s đang chạy.
 
 | Secret | Giá trị |
 | --- | --- |
