@@ -84,5 +84,5 @@ Chi tiết path: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) hoặc skill `peer
 
 ## CI/CD
 
-- Push `dev` / `main`: test + build image GHCR (`:dev` / `:latest`).
-- Deploy cluster: Actions → workflow **cd** → Run workflow (cần secret `KUBE_CONFIG`). Chi tiết [docs/DEPLOY.md](docs/DEPLOY.md).
+- Push `dev` / `main`: test + build image GHCR (`:dev` / `:latest` và tag theo commit).
+- Push `main`: EC2 systemd vẫn được rollout. K3s nhận cùng image khi secret `KUBE_CONFIG` đã có. Chi tiết [docs/DEPLOY.md](docs/DEPLOY.md).

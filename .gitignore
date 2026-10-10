@@ -3,6 +3,8 @@ node_modules/
 .env.*
 !.env.example
 k8s/secret.yaml
+k8s/tunnel-secret.yaml
+k8s/local/secret.yaml
 infra/aws/.terraform/
 infra/aws/*.tfstate
 infra/aws/*.tfstate.*

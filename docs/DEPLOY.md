@@ -22,7 +22,7 @@ Postgres: `postgresql://peertask:peertask@localhost:5432/peertask`. Đổi `JWT_
 | Workflow | Khi nào | Việc |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | PR / push `dev` + `main` | `npm test` + build Docker (không push) |
-| `.github/workflows/cd.yml` | push `dev` / `main` / tag `v*` | Test, build + push GHCR (`dev`, `latest`, sha, tag). Push `main` also rolls the API out on EC2 |
+| `.github/workflows/cd.yml` | push `dev` / `main` / tag `v*` | Test, build + push GHCR (`dev`, `latest`, sha, tag). Push `main` rolls the API out on EC2 and, when `KUBE_CONFIG` is set, on K3s |
 
 Push lên `main` cập nhật máy EC2 đang chạy (`/opt/peer_task_server`, `systemctl restart peertask-api`) qua SSM. Cần:
 
@@ -31,48 +31,65 @@ Push lên `main` cập nhật máy EC2 đang chạy (`/opt/peer_task_server`, `s
 | `AWS_DEPLOY_ROLE_ARN` | Role GitHub OIDC được phép `ssm:SendCommand` |
 | `PEERTASK_INSTANCE_ID` | Repository variable, instance id của API |
 
-Deploy Kubernetes **không** chạy tự động. Trong Actions → **cd** → Run workflow, bật `deploy`, cần secret:
+Push `main` cũng apply `k8s/` lên K3s khi secret sau có giá trị. Chưa có secret thì job bỏ qua và EC2 vẫn là API public.
 
 | Secret | Giá trị |
 | --- | --- |
 | `KUBE_CONFIG` | kubeconfig đã encode base64 |
 
-Tạo: `base64 -w0 ~/.kube/config` (Linux) hoặc `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.kube\config"))` (PowerShell).
+Tạo: `base64 -w0 /etc/rancher/k3s/k3s.yaml` (trên node Ubuntu) hoặc `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.kube\config"))` (PowerShell). Sửa `server:` trong kubeconfig thành IP public của VPS trước khi encode.
 
-Package GHCR phải **public** hoặc cluster có `imagePullSecret`.
+Package GHCR phải **public** hoặc cluster có `imagePullSecret`. Image trên K3s là tag commit (`github.sha`), `imagePullPolicy: Always`.
 
-## Kubernetes (VPS / k3s / kubeadm)
+## K3s trên Ubuntu (RDS + Cloudflare Tunnel)
 
-1. Sửa host trong `k8s/ingress.yaml` (`api.peertask.example.com`).
-2. Tạo secret (không commit `secret.yaml`):
+Một node. API **một** replica, strategy `Recreate`, vì room signaling nằm trong RAM. Postgres là **RDS**, không phải StatefulSet. `k8s/local/` chỉ dành cho cluster thử, không apply lên production.
+
+1. Cài K3s trên Ubuntu:
+
+```bash
+curl -sfL https://get.k3s.io | sh -
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+```
+
+2. RDS: security group mở `5432` đúng IP public của VPS. `DATABASE_URL` dùng `sslmode=require`. Giữ nguyên `JWT_SECRET` đang chạy nếu muốn phiên đăng nhập còn hiệu lực.
+
+3. Tạo secret trên cluster (không commit):
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
 kubectl -n peertask create secret generic peertask-api \
-  --from-literal=DATABASE_URL='postgresql://peertask:STRONG_PASSWORD@postgres:5432/peertask' \
+  --from-literal=DATABASE_URL='postgresql://USER:PASSWORD@your-db.ap-southeast-1.rds.amazonaws.com:5432/peertask?sslmode=require' \
   --from-literal=JWT_SECRET='at-least-32-random-chars' \
-  --from-literal=POSTGRES_PASSWORD='STRONG_PASSWORD' \
   --from-literal=ADMIN_SECRET=''
 ```
 
-3. Apply:
+4. Cloudflare Zero Trust → Tunnel (remotely managed). Public hostname `api.peertask.24now.space`, service:
+
+```text
+http://peertask-api.peertask.svc.cluster.local:3000
+```
+
+```bash
+kubectl -n peertask create secret generic peertask-tunnel \
+  --from-literal=TUNNEL_TOKEN='paste-the-tunnel-token'
+```
+
+Tunnel chuyển WebSocket. TLS dừng ở Cloudflare. Không mở cổng 3000 ra internet.
+
+5. Apply và đợi pod API:
 
 ```bash
 kubectl apply -k k8s
-kubectl -n peertask set image deployment/peertask-api \
-  api=ghcr.io/minhduy6868/peer_task_server:latest
+kubectl -n peertask rollout status deployment/peertask-api --timeout=180s
 ```
 
-4. Ingress controller (nginx) phải có sẵn. Trỏ DNS về LoadBalancer / NodePort.
+Entrypoint của image tự chạy migration trước `node src/index.js`. Health: `GET /health`. Socket.IO cùng cổng 3000, không có prefix `/api`.
 
-Health: `GET /health`. Socket.IO dùng cùng cổng 3000 — replica **= 1** vì room nằm in-memory. Ingress đã bật sticky session + timeout dài cho WebSocket.
+6. Giữ một origin public. Khi `https://api.peertask.24now.space/health` trả `status: ok` và Socket.IO nối được, trỏ client và Worker Cloudflare sang hostname Tunnel. Sau đó tắt job SSM trên EC2.
 
-### Production thật
-
-- Postgres managed (RDS, Cloud SQL, Supabase) thay StatefulSet trong cluster.
-- TLS trên Ingress (`cert-manager`).
-- Không scale API ngang hàng cho đến khi signaling dùng Redis adapter.
+CD trên `main` làm bước 5 với tag commit. Secret `peertask-api` và `peertask-tunnel` tạo một lần trên cluster. Thiếu `peertask-tunnel` thì `cloudflared` không sẵn sàng, pod API vẫn rollout.
 
 ## Client
 
-Flutter đọc URL theo `ConfigService` (Hive → Firebase REST → `assets/config.json`). Trỏ tới `https://api.peertask.example.com` — **không** có prefix `/api`.
+Flutter đọc URL theo `ConfigService` (Hive → Firebase REST → `assets/config.json`). Trỏ tới `https://api.peertask.24now.space` — **không** có prefix `/api`.

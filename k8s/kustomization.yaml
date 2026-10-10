@@ -4,9 +4,8 @@ namespace: peertask
 resources:
   - namespace.yaml
   - configmap.yaml
-  - postgres.yaml
   - api.yaml
-  - ingress.yaml
+  - tunnel.yaml
 images:
   - name: ghcr.io/minhduy6868/peer_task_server
     newTag: latest

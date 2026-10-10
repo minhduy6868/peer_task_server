@@ -148,39 +148,47 @@ jobs:
           done
           exit 1
 
-  deploy:
+  deploy-k3s:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
     runs-on: ubuntu-latest
-    environment: production
+    concurrency:
+      group: peertask-k3s
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require kubeconfig
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Roll out the API image on K3s
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          TAG: ${{ inputs.image_tag }}
+          SHA: ${{ github.sha }}
         run: |
           if [ -z "$KUBE_CONFIG" ]; then
-            echo "Set repository secret KUBE_CONFIG (base64 kubeconfig) to deploy."
-            exit 1
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Set repository secret KUBE_CONFIG (base64 kubeconfig) to deploy."
+              exit 1
+            fi
+            echo "KUBE_CONFIG is unset. Skipping K3s. The EC2 systemd unit remains the public API."
+            exit 0
           fi
+          if [ -z "$TAG" ]; then
+            TAG="$SHA"
+          fi
+          case "$TAG" in
+            *[!A-Za-z0-9._-]*)
+              echo "Image tag may only contain letters, numbers, dots, underscores, and hyphens."
+              exit 1
+              ;;
+          esac
           mkdir -p "$HOME/.kube"
           echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
-
-      - name: Apply Kubernetes manifests
-        env:
-          TAG: ${{ inputs.image_tag }}
-        run: |
-          if [ -z "$TAG" ]; then
-            if [ "${{ github.ref }}" = "refs/heads/dev" ]; then
-              TAG=dev
-            else
-              TAG=latest
-            fi
-          fi
-          kubectl apply -f k8s/namespace.yaml
-          kubectl -n peertask apply -f k8s/configmap.yaml
+          sed -i "s/newTag: .*/newTag: ${TAG}/" k8s/kustomization.yaml
           kubectl apply -k k8s
-          kubectl -n peertask set image deployment/peertask-api api=ghcr.io/${{ env.IMAGE_NAME }}:${TAG}
           kubectl -n peertask rollout status deployment/peertask-api --timeout=180s
