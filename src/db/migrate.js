@@ -209,6 +209,15 @@ CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Task fields used by POST /tasks. Older databases only had the first columns.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline TIMESTAMP;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_id VARCHAR(255);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS labels JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS estimated_hours DOUBLE PRECISION;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id UUID;
 `;
 
 async function migrate() {

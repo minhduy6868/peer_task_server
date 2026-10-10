@@ -39,7 +39,7 @@ async function getNextPosition(boardId, status) {
      FROM tasks WHERE board_id = $1 AND status = $2`,
     [boardId, status]
   );
-  return result.rows[0].next_pos;
+  return Number(result.rows[0].next_pos);
 }
 
 async function reorderPositions(boardId, status) {
@@ -159,7 +159,7 @@ router.post('/',
           status, position, priority, deadline,
           parent_id, labels, estimated_hours, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
         RETURNING *`,
       [
         `task-${Date.now()}`,
@@ -172,7 +172,7 @@ router.post('/',
         priority,
         deadline ? new Date(deadline) : null,
         parent_id,
-        JSON.stringify(labels),
+        JSON.stringify(labels ?? []),
         estimated_hours,
         req.user.id,
       ]
