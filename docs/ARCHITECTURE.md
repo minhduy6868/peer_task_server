@@ -124,7 +124,7 @@ Assignee: phải là board member hoặc workspace owner (`validateAssignees`).
 
 Baseline: `migrate.js`. Cột task thêm: `migrations/add_task_fields.js` — phải chạy trên DB cũ.
 
-Enums: status `todo|doing|done`; priority `low|medium|high|urgent`; op `createObject|updateObject|deleteObject|moveObject|resizeObject`.
+Enums: status `todo|doing|review|done`; priority `low|medium|high|urgent`; op `createObject|updateObject|deleteObject|moveObject|resizeObject`.
 
 `GET /operations/board/:id` map sang shape Dart: `{ opId, actor, timestamp, type, payload, applied: false }`. Trùng `operationId` khi POST → 200 already exists.
 

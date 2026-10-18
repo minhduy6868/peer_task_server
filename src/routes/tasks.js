@@ -5,6 +5,8 @@ const { authenticateToken } = require('../middleware/auth');
 const { requireBoardEdit, requireBoardView, requireTaskEdit } = require('../middleware/permissions');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 
+const TASK_STATUSES = ['todo', 'doing', 'review', 'done'];
+
 const router = express.Router();
 router.use(authenticateToken);
 
@@ -73,7 +75,7 @@ const TASK_SELECT = `
 router.get('/board/:boardId',
   requireBoardView,
   query('assignee_id').optional().isUUID(),
-  query('status').optional().isIn(['todo', 'doing', 'done']),
+  query('status').optional().isIn(TASK_STATUSES),
   query('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   query('parent_id').optional(),
   asyncHandler(async (req, res) => {
@@ -118,7 +120,7 @@ router.post('/',
   body('title').notEmpty().trim(),
   body('description').optional().trim(),
   body('assignees').optional().isArray(),
-  body('status').optional().isIn(['todo', 'doing', 'done']),
+  body('status').optional().isIn(TASK_STATUSES),
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   body('deadline').optional().isISO8601(),
   body('parent_id').optional(),
@@ -188,7 +190,7 @@ router.put('/:taskId',
   body('title').optional().notEmpty().trim(),
   body('description').optional(),
   body('assignees').optional().isArray(),
-  body('status').optional().isIn(['todo', 'doing', 'done']),
+  body('status').optional().isIn(TASK_STATUSES),
   body('position').optional().isInt({ min: 0 }),
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   body('deadline').optional(),
@@ -316,7 +318,7 @@ router.post('/:taskId/move', requireTaskEdit, asyncHandler(async (req, res) => {
   if (!status) {
     throw new AppError('status is required', 400, 'VALIDATION_ERROR');
   }
-  if (!['todo', 'doing', 'done'].includes(status)) {
+  if (!TASK_STATUSES.includes(status)) {
     throw new AppError('Invalid status', 400, 'VALIDATION_ERROR');
   }
 
@@ -350,6 +352,7 @@ router.get('/board/:boardId/stats', requireBoardView, asyncHandler(async (req, r
     `SELECT
         COUNT(*) FILTER (WHERE status = 'todo') as todo_count,
         COUNT(*) FILTER (WHERE status = 'doing') as doing_count,
+        COUNT(*) FILTER (WHERE status = 'review') as review_count,
         COUNT(*) FILTER (WHERE status = 'done') as done_count,
         COUNT(*) as total_count,
         COUNT(*) FILTER (WHERE deadline < NOW() AND status != 'done') as overdue_count,
@@ -363,7 +366,7 @@ router.get('/board/:boardId/stats', requireBoardView, asyncHandler(async (req, r
 
 router.get('/my-tasks',
   query('workspaceId').optional().isUUID(),
-  query('status').optional().isIn(['todo', 'doing', 'done']),
+  query('status').optional().isIn(TASK_STATUSES),
   query('open').optional().isIn(['true', 'false']),
   asyncHandler(async (req, res) => {
   assertValid(req);

@@ -20,7 +20,7 @@ Do not edit `../client`. Commit only in this repo (`peer_task_server`, base `dev
 - No `/api` prefix. Mounts: `/auth`, `/token`, `/workspaces`, `/boards`, `/tasks`, `/operations`, `/admin`, `/ai`, `/health`.
 - JWT `Authorization: Bearer`. Refresh: `POST /token/refresh` `{ refreshToken }`.
 - Roles: workspace `owner|editor|viewer`. Board `edit|view` + `is_board_owner`. Workspace owner edits all boards.
-- Tasks: `todo|doing|done`, priority `low|medium|high|urgent`.
+- Tasks: `todo|doing|review|done`, priority `low|medium|high|urgent`.
 - Ops: `createObject|updateObject|deleteObject|moveObject|resizeObject`. Dedup `operation_id`.
 - Mutating routes: `authenticateToken` + permission middleware + `AppError`/`asyncHandler`. Parameterized SQL only.
 - Never commit `.env` or `JWT_SECRET`.

@@ -30,7 +30,7 @@ Codex: `$peertask-api` or `/skills`. Claude: `/peertask-api`.
 - Routes are **not** under `/api`. Mounts: `/auth`, `/token`, `/workspaces`, `/boards`, `/tasks`, `/operations`, `/admin`, `/ai`, `/health`.
 - JWT in `Authorization: Bearer`. Refresh: `POST /token/refresh` `{ refreshToken }`.
 - Roles: workspace `owner|editor|viewer`. Board `edit|view` + `is_board_owner`. Workspace owner has edit on all boards.
-- Tasks: `todo|doing|done`, priority `low|medium|high|urgent`.
+- Tasks: `todo|doing|review|done`, priority `low|medium|high|urgent`.
 - Ops: `createObject|updateObject|deleteObject|moveObject|resizeObject`. Dedup `operation_id`.
 - New mutating routes: `authenticateToken` + permission middleware + `AppError`/`asyncHandler`.
 

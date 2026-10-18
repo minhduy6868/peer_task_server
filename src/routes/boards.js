@@ -89,6 +89,7 @@ router.get('/workspace/:workspaceId/summary', requireWorkspaceMember, asyncHandl
     `SELECT b.id AS board_id,
         COUNT(t.id) FILTER (WHERE t.status = 'todo') AS todo_count,
         COUNT(t.id) FILTER (WHERE t.status = 'doing') AS doing_count,
+        COUNT(t.id) FILTER (WHERE t.status = 'review') AS review_count,
         COUNT(t.id) FILTER (WHERE t.status = 'done') AS done_count,
         COUNT(t.id) FILTER (WHERE t.deadline < NOW() AND t.status <> 'done') AS overdue_count
      FROM boards b
