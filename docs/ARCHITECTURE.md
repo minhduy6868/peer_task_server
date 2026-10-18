@@ -67,6 +67,7 @@ CommonJS. SQL parameterized `$1`, `$2`.
 | `/operations` | `operations.js` |
 | `/admin` | `admin.js` |
 | `/ai` | `ai.js` |
+| `/uploads` | `uploads.js` (`POST /uploads/signature` ký upload Cloudinary; cần `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET`) |
 | `/health` | inline |
 
 Public: register, login, forgot/reset, `/token/refresh`, `/token/logout`, `/health`, `/ai/*`, GET invite info.
@@ -118,7 +119,7 @@ Assignee: phải là board member hoặc workspace owner (`validateAssignees`).
 | `refresh_tokens` / `password_reset_tokens` | phiên / reset |
 | `workspaces` / `workspace_members` / `workspace_invites` | tổ chức + invite |
 | `boards` / `board_members` | board + `permission` + `is_board_owner` |
-| `tasks` | Kanban; `assignees UUID[]`; status/priority; `parent_id`; labels jsonb |
+| `tasks` | Kanban; `assignees UUID[]`; status/priority; `parent_id`; labels jsonb; `attachments` jsonb `[{url,name,bytes}]` (chỉ URL `res.cloudinary.com/<cloud>/`) |
 | `strokes` | legacy strokes table |
 | `board_operations` | `operation_id` unique, `operation_type`, `payload` jsonb, `timestamp` bigint |
 

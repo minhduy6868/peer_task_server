@@ -6,6 +6,26 @@ const { requireBoardEdit, requireBoardView, requireTaskEdit } = require('../midd
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 
 const TASK_STATUSES = ['todo', 'doing', 'review', 'done'];
+const MAX_ATTACHMENTS = 20;
+
+function cleanAttachments(list) {
+  if (list === undefined) return undefined;
+  if (!Array.isArray(list) || list.length > MAX_ATTACHMENTS) {
+    throw new AppError(`attachments must be an array of at most ${MAX_ATTACHMENTS}`, 400, 'VALIDATION_ERROR');
+  }
+  const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+  return list.map((item) => {
+    const url = typeof item?.url === 'string' ? item.url : '';
+    if (!cloud || !url.startsWith(`https://res.cloudinary.com/${cloud}/`)) {
+      throw new AppError('Attachments must be images uploaded to Cloudinary', 400, 'VALIDATION_ERROR');
+    }
+    return {
+      url,
+      name: String(item.name ?? '').slice(0, 200),
+      bytes: Number.isFinite(item.bytes) ? item.bytes : null,
+    };
+  });
+}
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -125,6 +145,7 @@ router.post('/',
   body('deadline').optional().isISO8601(),
   body('parent_id').optional(),
   body('labels').optional().isArray(),
+  body('attachments').optional().isArray(),
   body('estimated_hours').optional().isFloat({ min: 0 }),
   asyncHandler(async (req, res) => {
     assertValid(req);
@@ -141,6 +162,7 @@ router.post('/',
       labels = [],
       estimated_hours,
     } = req.body;
+    const attachments = cleanAttachments(req.body.attachments) ?? [];
 
     await validateAssignees(boardId, assignees);
 
@@ -159,9 +181,9 @@ router.post('/',
       `INSERT INTO tasks (
           id, board_id, title, description, assignees,
           status, position, priority, deadline,
-          parent_id, labels, estimated_hours, created_by
+          parent_id, labels, estimated_hours, created_by, attachments
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14::jsonb)
         RETURNING *`,
       [
         `task-${Date.now()}`,
@@ -177,6 +199,7 @@ router.post('/',
         JSON.stringify(labels ?? []),
         estimated_hours,
         req.user.id,
+        JSON.stringify(attachments),
       ]
     );
 
@@ -195,10 +218,12 @@ router.put('/:taskId',
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   body('deadline').optional(),
   body('labels').optional().isArray(),
+  body('attachments').optional().isArray(),
   body('estimated_hours').optional().isFloat({ min: 0 }),
   asyncHandler(async (req, res) => {
     assertValid(req);
     const { taskId } = req.params;
+    const attachments = cleanAttachments(req.body.attachments);
     const {
       title, description, assignees,
       status, position, priority, deadline,
@@ -255,6 +280,10 @@ router.put('/:taskId',
     if (estimated_hours !== undefined) {
       updates.push(`estimated_hours = $${paramCount++}`);
       values.push(estimated_hours);
+    }
+    if (attachments !== undefined) {
+      updates.push(`attachments = $${paramCount++}::jsonb`);
+      values.push(JSON.stringify(attachments));
     }
     if (updates.length === 0) {
       throw new AppError('No fields to update', 400, 'VALIDATION_ERROR');

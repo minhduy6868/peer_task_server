@@ -14,6 +14,7 @@ const taskRoutes = require('./routes/tasks');
 const operationRoutes = require('./routes/operations');
 const adminRoutes = require('./routes/admin');
 const aiRoutes = require('./routes/ai');  // 🤖 AI Proxy for Ollama
+const uploadRoutes = require('./routes/uploads');
 // const migrationRoutes = require('./routes/migration'); // Commented out - not needed
 const { setupSocketHandlers } = require('./sockets/signaling');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -42,6 +43,7 @@ app.use('/tasks', taskRoutes);
 app.use('/operations', operationRoutes);
 app.use('/admin', adminRoutes);
 app.use('/ai', aiRoutes);  // 🤖 AI Proxy: /ai/generate, /ai/tags, /ai/health
+app.use('/uploads', uploadRoutes);
 // app.use('/migration', migrationRoutes); // Commented out - not needed
 
 app.get('/health', (req, res) => {
