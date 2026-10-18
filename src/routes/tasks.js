@@ -82,7 +82,8 @@ const TASK_SELECT = `
          (SELECT JSON_AGG(JSON_BUILD_OBJECT(
            'id', users.id,
            'name', users.name,
-           'email', users.email
+           'email', users.email,
+           'avatar', users.avatar
          ))
          FROM users
          WHERE users.id = ANY(t.assignees)) as assignee_list,

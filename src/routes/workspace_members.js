@@ -13,6 +13,7 @@ router.get('/:workspaceId/members', authenticateToken, requireWorkspaceMember, a
         u.id as user_id, 
         u.name, 
         u.email,
+        u.avatar,
         wm.role,
         wm.joined_at
       FROM workspace_members wm

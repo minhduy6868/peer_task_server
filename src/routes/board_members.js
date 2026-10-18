@@ -17,6 +17,7 @@ router.get('/:boardId/members', authenticateToken, asyncHandler(async (req, res)
         u.id as user_id, 
         u.name, 
         u.email,
+        u.avatar,
         bm.permission,
         bm.is_board_owner,
         bm.added_at,
