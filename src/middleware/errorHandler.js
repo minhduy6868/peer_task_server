@@ -14,6 +14,19 @@ class AppError extends Error {
   }
 }
 
+const SENSITIVE_KEY = /pass(word)?|token|secret|otp|code/i;
+
+function redact(value) {
+  if (Array.isArray(value)) return value.map(redact);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, v]) => [
+      key,
+      SENSITIVE_KEY.test(key) ? '[REDACTED]' : redact(v),
+    ])
+  );
+}
+
 /**
  * Error Handler Middleware
  */
@@ -71,9 +84,9 @@ function errorHandler(err, req, res, next) {
       stack: err.stack,
       url: req.originalUrl,
       method: req.method,
-      body: req.body,
+      body: redact(req.body),
       params: req.params,
-      query: req.query,
+      query: redact(req.query),
       user: req.user?.id
     });
   } else {
